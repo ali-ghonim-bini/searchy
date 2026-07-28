@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Searchy
+Comment=Search applications, files, and folders
+Exec=gapplication action io.github.alighonimbini.Searchy show-search
+Icon=io.github.alighonimbini.Searchy
+Terminal=false
+NoDisplay=true
+Categories=Utility;

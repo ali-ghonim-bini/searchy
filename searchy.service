@@ -1,0 +1,16 @@
+[Unit]
+Description=Searchy Desktop Search
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/my_proj/system_scripts/searchy
+EnvironmentFile=-%h/Documents/my_proj/system_scripts/searchy/.env
+Environment=GDK_BACKEND=wayland
+ExecStart=/usr/bin/python3 -m app.main
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
