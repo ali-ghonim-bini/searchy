@@ -4,7 +4,7 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 service_dir="${HOME}/.config/systemd/user"
 application_dir="${HOME}/.local/share/applications"
-icon_dir="${HOME}/.local/share/icons/hicolor/512x512/apps"
+icon_dir="${HOME}/.local/share/icons/hicolor/scalable/apps"
 binding_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/searchy/"
 media_schema="org.gnome.settings-daemon.plugins.media-keys"
 binding_schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:${binding_path}"
@@ -25,13 +25,33 @@ done
 python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1')"
 
 mkdir -p "$service_dir" "$application_dir" "$icon_dir"
-install -m 0644 "${project_dir}/searchy.service" "${service_dir}/searchy.service"
+python3 - \
+    "${project_dir}/searchy.service" \
+    "${service_dir}/searchy.service" \
+    "$project_dir" <<'PY'
+import sys
+from pathlib import Path
+
+source, destination, project_dir = sys.argv[1:]
+template = Path(source).read_text(encoding="utf-8")
+if template.count("@PROJECT_DIR@") != 2:
+    raise SystemExit("Service template must contain exactly two @PROJECT_DIR@ placeholders")
+
+# Prevent percent signs in the path from being interpreted as systemd specifiers.
+escaped_dir = project_dir.replace("%", "%%")
+Path(destination).write_text(
+    template.replace("@PROJECT_DIR@", escaped_dir),
+    encoding="utf-8",
+)
+Path(destination).chmod(0o644)
+PY
 install -m 0644 "${project_dir}/io.github.alighonimbini.Searchy.desktop" \
     "${application_dir}/io.github.alighonimbini.Searchy.desktop"
-install -m 0644 "${project_dir}/logo_2.png" \
-    "${icon_dir}/io.github.alighonimbini.Searchy.png"
+install -m 0644 "${project_dir}/io.github.alighonimbini.Searchy.svg" \
+    "${icon_dir}/io.github.alighonimbini.Searchy.svg"
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor"
+    gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" ||
+        echo "Warning: could not refresh the user icon cache." >&2
 fi
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$application_dir"

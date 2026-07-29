@@ -4,7 +4,7 @@ set -eu
 service_file="${HOME}/.config/systemd/user/searchy.service"
 application_file="${HOME}/.local/share/applications/io.github.alighonimbini.Searchy.desktop"
 icon_root="${HOME}/.local/share/icons/hicolor"
-icon_file="${icon_root}/512x512/apps/io.github.alighonimbini.Searchy.png"
+icon_file="${icon_root}/scalable/apps/io.github.alighonimbini.Searchy.svg"
 binding_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/searchy/"
 media_schema="org.gnome.settings-daemon.plugins.media-keys"
 binding_schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:${binding_path}"
@@ -12,7 +12,8 @@ binding_schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$
 systemctl --user disable --now searchy.service 2>/dev/null || true
 rm -f "$service_file" "$application_file" "$icon_file"
 if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -d "$icon_root" ]; then
-    gtk-update-icon-cache -f -t "$icon_root"
+    gtk-update-icon-cache -f -t "$icon_root" ||
+        echo "Warning: could not refresh the user icon cache." >&2
 fi
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${HOME}/.local/share/applications"
