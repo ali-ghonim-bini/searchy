@@ -95,6 +95,7 @@ def main(arguments: list[str] | None = None) -> int:
         "--rebuild", action="store_true", help="discard the index and build it again"
     )
     commands.add_parser("show", help="show or hide the search window")
+    commands.add_parser("settings", help="open the settings window")
     options = parser.parse_args(arguments)
     if options.command == "status":
         try:
@@ -106,6 +107,8 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     if options.command == "show":
         return _send("show-search")
+    if options.command == "settings":
+        return _send("settings")
     code = _send("rebuild-index" if options.rebuild else "reindex")
     if code == 0:
         print(

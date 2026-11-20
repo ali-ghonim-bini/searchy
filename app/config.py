@@ -68,11 +68,14 @@ class Config:
     index_removable: bool
 
     @classmethod
-    def load(cls, env_file: Path | None = None) -> "Config":
+    def load(
+        cls, env_file: Path | None = None, environ: dict[str, str] | None = None
+    ) -> "Config":
+        environ = os.environ if environ is None else environ
         values = _read_env(env_file or Path(__file__).resolve().parent.parent / ".env")
 
         def value(name: str, default: str) -> str:
-            return os.environ.get(name, values.get(name, default))
+            return environ.get(name, values.get(name, default))
 
         roots = tuple(
             Path(item).expanduser().resolve()

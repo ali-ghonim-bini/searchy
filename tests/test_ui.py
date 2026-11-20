@@ -284,6 +284,51 @@ class CommandTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
+class ApplySettingsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from app import settings
+
+        Adw.init()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.settings = settings
+        self.env = Path(directory.name) / ".env"
+        self.env.write_text("NATIVE_SHORTCUT='<Alt>f'\n", encoding="utf-8")
+        # Never touch the real .env, the real shortcut or the real service.
+        original = settings.ENV_PATH
+        settings.ENV_PATH = self.env
+        self.addCleanup(lambda: setattr(settings, "ENV_PATH", original))
+        self.window = SearchWindow(
+            None,
+            SearchDatabase(Path(directory.name) / "index.sqlite3"),
+            ApplicationCatalog(),
+            UsageStore(None),
+            50,
+            "everything",
+        )
+        self.addCleanup(self.window.shutdown)
+        self.spawned: list[list[str]] = []
+        self.window._spawn = lambda command, directory: self.spawned.append(command)
+
+    def test_apply_saves_then_restarts_and_moves_a_changed_shortcut(self) -> None:
+        values = self.settings.read_values(self.env)
+        values["RESULT_LIMIT"] = "42"
+        self.assertIsNone(self.window._apply_settings(values))
+        self.assertEqual(self.spawned, [self.settings.RESTART_COMMAND])
+        self.assertIn("RESULT_LIMIT=42", self.env.read_text(encoding="utf-8"))
+        values["NATIVE_SHORTCUT"] = "<Super>space"
+        self.assertIsNone(self.window._apply_settings(values))
+        self.assertEqual(self.spawned[1][-1], "<Super>space")
+        self.assertEqual(self.spawned[2], self.settings.RESTART_COMMAND)
+
+    def test_invalid_settings_are_reported_and_nothing_restarts(self) -> None:
+        values = self.settings.read_values(self.env)
+        values["WEB_SEARCH_URL"] = "not a url"
+        self.assertIn("WEB_SEARCH_URL", self.window._apply_settings(values))
+        self.assertEqual(self.spawned, [])
+
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
 class FocusTests(unittest.TestCase):
     def make_window(self, hide_on_focus_loss: bool) -> SearchWindow:
         Adw.init()

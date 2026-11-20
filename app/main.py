@@ -69,6 +69,9 @@ class SearchyApplication(Adw.Application):
         action = Gio.SimpleAction.new("show-search", None)
         action.connect("activate", lambda _action, _parameter: self.show_search())
         self.add_action(action)
+        action = Gio.SimpleAction.new("settings", None)
+        action.connect("activate", lambda _action, _parameter: self.show_settings())
+        self.add_action(action)
         for name, rebuild in (("reindex", False), ("rebuild-index", True)):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", self._on_reindex, rebuild)
@@ -146,6 +149,12 @@ class SearchyApplication(Adw.Application):
         else:
             self.window.show_search()
             LOGGER.info("Search window shown")
+
+    def show_settings(self) -> None:
+        if self.window is None:
+            LOGGER.error("Cannot show settings: window is not initialized")
+            return
+        self.window.show_settings()
 
     def _on_reindex(self, _action, _parameter, rebuild: bool) -> None:
         if self.indexer is None:

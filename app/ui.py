@@ -34,6 +34,7 @@ from .models import SearchResult
 from .preview import Preview, describe
 from .query import parse_query
 from .ranking import match_spans, sort_key
+from . import settings
 from .usage import UsageStore
 
 LOGGER = logging.getLogger(__name__)
@@ -127,6 +128,10 @@ class SearchWindow(Adw.ApplicationWindow):
         self.search_type.set_selected(SEARCH_TYPES.index(default_search_type))
         self.search_type.connect("notify::selected", self._on_filter_changed)
         search_row.append(self.search_type)
+        settings_button = Gtk.Button(icon_name="emblem-system-symbolic")
+        settings_button.set_tooltip_text("Settings (Ctrl+,)")
+        settings_button.connect("clicked", lambda _button: self.show_settings())
+        search_row.append(settings_button)
         content.append(search_row)
 
         sort_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -232,6 +237,40 @@ class SearchWindow(Adw.ApplicationWindow):
             self.preview_image.set_paintable(Gdk.Texture.new_for_pixbuf(pixbuf))
         self.preview_image.set_visible(pixbuf is not None)
         return GLib.SOURCE_REMOVE
+
+    def show_settings(self) -> None:
+        if self.dialog_open:
+            return
+        if not self.get_visible():
+            self.show_search()
+        dialog = settings.build_dialog(
+            settings.read_values(settings.ENV_PATH), self._apply_settings
+        )
+        dialog.connect("closed", self._on_settings_closed)
+        self.dialog_open = True
+        dialog.present(self)
+
+    def _on_settings_closed(self, dialog) -> None:
+        self.dialog_open = False
+
+    def _apply_settings(self, values: dict[str, str]) -> str | None:
+        """Save, move the shortcut if it changed, and restart. Returns an error to show."""
+        previous = settings.read_values(settings.ENV_PATH)
+        try:
+            settings.save(settings.ENV_PATH, values)
+        except ValueError as error:
+            return str(error)
+        except OSError as error:
+            LOGGER.warning("Cannot save settings: %s", error)
+            return f"Could not save the settings: {error.strerror}"
+        try:
+            if values[settings.SHORTCUT_KEY] != previous[settings.SHORTCUT_KEY]:
+                self._spawn(settings.shortcut_command(values[settings.SHORTCUT_KEY]), Path.home())
+            self._spawn(settings.RESTART_COMMAND, Path.home())
+        except OSError as error:
+            LOGGER.warning("Cannot restart after saving settings: %s", error)
+            return "Saved. Restart Searchy to apply: systemctl --user restart searchy"
+        return None
 
     def show_search(self) -> None:
         self._refresh_creation_sort()
@@ -899,6 +938,9 @@ class SearchWindow(Adw.ApplicationWindow):
         if control and shift and keyval in (Gdk.KEY_c, Gdk.KEY_C):
             if selected_row:
                 self._copy_path(selected_row.result)
+            return True
+        if control and keyval == Gdk.KEY_comma:
+            self.show_settings()
             return True
         can_act = bool(selected_row and selected_row.result.path is not None)
         if keyval == Gdk.KEY_F2:
