@@ -29,6 +29,7 @@ SEARCH_TYPES = ("everything", "apps", "files", "folders")
 # Alt+1 to Alt+9 open the first results directly.
 QUICK_OPEN_COUNT = 9
 RECENT_FILE_COUNT = 8
+FOCUS_CHECK_MS = 150
 _DIGIT_KEYS = {
     getattr(Gdk, f"{prefix}{digit}"): digit - 1
     for prefix in ("KEY_", "KEY_KP_")
@@ -68,6 +69,7 @@ class SearchWindow(Adw.ApplicationWindow):
         self.web_search_url = web_search_url
         self.was_active = False
         self.dialog_open = False
+        self.focus_check_id = 0
         self.set_default_size(760, 560)
         self.connect("close-request", self._on_close_request)
         self.connect("notify::is-active", self._on_active_changed)
@@ -549,10 +551,37 @@ class SearchWindow(Adw.ApplicationWindow):
         # on compositors that show it without focusing it.
         if not self.was_active or not self.get_visible():
             return
-        self.was_active = False
         LOGGER.info("Search window lost focus")
-        if self.hide_on_focus_loss and not self.dialog_open:
-            self.set_visible(False)
+        if self.hide_on_focus_loss and not self.focus_check_id:
+            # Opening a dropdown or menu also takes focus from the window, and
+            # that popup may not be mapped yet, so decide a moment later.
+            self.focus_check_id = GLib.timeout_add(FOCUS_CHECK_MS, self._check_focus)
+
+    def _check_focus(self) -> bool:
+        """Hide once focus has really gone to another window."""
+        if not self.get_visible() or self.is_active():
+            self.focus_check_id = 0
+            return GLib.SOURCE_REMOVE
+        if self.dialog_open or self._has_open_popup():
+            # Keep watching: closing the popup by clicking another window
+            # does not report a second focus change.
+            return GLib.SOURCE_CONTINUE
+        self.focus_check_id = 0
+        self.was_active = False
+        self.set_visible(False)
+        return GLib.SOURCE_REMOVE
+
+    def _has_open_popup(self) -> bool:
+        pending: list[Gtk.Widget] = [self]
+        while pending:
+            widget = pending.pop()
+            if isinstance(widget, Gtk.Popover) and widget.get_visible():
+                return True
+            child = widget.get_first_child()
+            while child:
+                pending.append(child)
+                child = child.get_next_sibling()
+        return False
 
     def _on_close_request(self, window) -> bool:
         self.set_visible(False)

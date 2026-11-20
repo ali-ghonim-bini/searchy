@@ -8,7 +8,7 @@ import gi
 
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Adw, Gdk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 from app.catalog import ApplicationCatalog
 from app.database import SearchDatabase
@@ -145,6 +145,32 @@ class FocusTests(unittest.TestCase):
     def change_focus(self, window: SearchWindow, active: bool) -> None:
         window.is_active = lambda: active
         window._on_active_changed(window, None)
+        # The window decides shortly after losing focus; run that check now.
+        if window.focus_check_id:
+            GLib.source_remove(window.focus_check_id)
+            window.focus_check_id = 0
+            window._check_focus()
+
+    def test_stays_open_while_its_dropdown_is_open(self) -> None:
+        window = self.make_window(True)
+        self.change_focus(window, True)
+        window.search_type.get_last_child().popup()
+        self.assertTrue(window._has_open_popup())
+        self.change_focus(window, False)
+        self.assertFalse(self.hidden)
+        window.search_type.get_last_child().popdown()
+        self.assertFalse(window._has_open_popup())
+        self.assertFalse(window._check_focus())
+        self.assertTrue(self.hidden)
+
+    def test_stays_open_if_focus_returns_before_the_check(self) -> None:
+        window = self.make_window(True)
+        self.change_focus(window, True)
+        window.is_active = lambda: False
+        window._on_active_changed(window, None)
+        window.is_active = lambda: True
+        self.assertFalse(window._check_focus())
+        self.assertFalse(self.hidden)
 
     def test_hides_after_losing_focus(self) -> None:
         window = self.make_window(True)
