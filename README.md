@@ -101,7 +101,7 @@ Application results appear immediately. File and folder searches need one word
 of at least three characters so large indexes never fall back to an unbounded
 scan.
 
-Words match in any order, so `2024 report` finds `Annual Report 2024.pdf`. A
+The letters that matched are shown in bold in each result. Words match in any order, so `2024 report` finds `Annual Report 2024.pdf`. A
 word may also match a parent folder: `invoices march` finds `march.pdf` inside
 `invoices/`. Applications also match by keyword (`browser`), initials (`vsc`),
 and small typos. Hidden and dependency directories rank below other matches.

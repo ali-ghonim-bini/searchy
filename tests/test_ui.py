@@ -64,6 +64,12 @@ class KeyboardTests(unittest.TestCase):
         self.assertTrue(self.press(Gdk.KEY_9, Gdk.ModifierType.ALT_MASK))
         self.assertEqual(self.opened, ["file3.txt"])
 
+    def test_matched_letters_are_bold_and_markup_is_escaped(self) -> None:
+        from app.ui import _highlighted
+
+        self.assertEqual(_highlighted("a<b>&file", ["file"]), "a&lt;b&gt;&amp;<b>file</b>")
+        self.assertEqual(_highlighted("plain", []), "plain")
+
     def test_plain_digit_is_left_for_typing(self) -> None:
         self.assertFalse(self.press(Gdk.KEY_3))
         self.assertEqual(self.opened, [])
