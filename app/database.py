@@ -9,6 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import SearchResult
+from .ranking import MIN_INDEXED_LENGTH, tokenize
+
+_RESULT_COLUMNS = (
+    "entries.path, entries.name, entries.parent, entries.kind, entries.created_at"
+)
+# Sorts hidden and dependency directories after everything else.
+_NOISE_SQL = (
+    "(instr(entries.path, '/.') > 0 OR instr(entries.path, '/node_modules/') > 0"
+    " OR instr(entries.path, '/__pycache__/') > 0)"
+)
 
 
 @dataclass(frozen=True)
@@ -214,33 +224,40 @@ class SearchDatabase:
         kind: str | None = None,
         cancel_event: threading.Event | None = None,
     ) -> list[SearchResult]:
+        """Match every word of the query, in any order, against names then paths."""
         if kind not in {None, "file", "folder"}:
             raise ValueError("kind must be file, folder, or None")
-        normalized = query.strip().casefold()
-        if len(normalized) < 3:
+        tokens = tokenize(query)
+        indexed = [token for token in tokens if len(token) >= MIN_INDEXED_LENGTH]
+        if not indexed:
             return []
         if cancel_event and cancel_event.is_set():
             return []
-        match = '"' + normalized.replace('"', '""') + '"'
-        kind_condition = " AND entries.kind = ?" if kind else ""
+        match = " AND ".join(_fts_phrase(token) for token in indexed)
+        conditions = ["entries_fts MATCH ?"]
         parameters: list[object] = [match]
         if kind:
+            conditions.append("entries.kind = ?")
             parameters.append(kind)
-        exact = normalized
-        prefix = _escape_like(normalized) + "%"
-        contains = "%" + _escape_like(normalized) + "%"
-        parameters.extend((exact, prefix, contains, limit))
+        for token in tokens:
+            if len(token) < MIN_INDEXED_LENGTH:
+                conditions.append("lower(entries.name) LIKE ? ESCAPE '\\'")
+                parameters.append("%" + _escape_like(token) + "%")
+        full = " ".join(tokens)
+        parameters.extend(
+            (full, _escape_like(full) + ".%", _escape_like(tokens[0]) + "%", limit)
+        )
         sql = f"""
-            SELECT entries.path, entries.name, entries.parent, entries.kind, entries.created_at
+            SELECT {_RESULT_COLUMNS}
             FROM entries
             JOIN entries_fts ON entries.id = entries_fts.rowid
-            WHERE entries_fts MATCH ?{kind_condition}
+            WHERE {" AND ".join(conditions)}
             ORDER BY CASE
                 WHEN lower(entries.name) = ? THEN 0
+                WHEN lower(entries.name) LIKE ? ESCAPE '\\' THEN 0
                 WHEN lower(entries.name) LIKE ? ESCAPE '\\' THEN 1
-                WHEN lower(entries.name) LIKE ? ESCAPE '\\' THEN 2
-                ELSE 3
-            END, length(entries.name), lower(entries.name)
+                ELSE 2
+            END, {_NOISE_SQL}, length(entries.name), entries.modified_at DESC
             LIMIT ?
         """
         with self._connection() as connection:
@@ -250,14 +267,17 @@ class SearchDatabase:
                 )
             try:
                 rows = connection.execute(sql, parameters).fetchall()
-                if len(rows) < limit and not (cancel_event and cancel_event.is_set()):
+                seen = {row[0] for row in rows}
+                if len(rows) < limit and len(tokens) > 1:
+                    rows.extend(
+                        self._search_paths(
+                            connection, tokens, indexed, kind, limit - len(rows), seen
+                        )
+                    )
+                if len(rows) < limit:
                     rows.extend(
                         self._search_folder_paths(
-                            connection,
-                            match,
-                            kind,
-                            limit - len(rows),
-                            {row[0] for row in rows},
+                            connection, match, kind, limit - len(rows), seen
                         )
                     )
             except sqlite3.OperationalError as error:
@@ -275,6 +295,50 @@ class SearchDatabase:
             )
             for row in rows
         ]
+
+    def _search_paths(
+        self,
+        connection: sqlite3.Connection,
+        tokens: list[str],
+        indexed: list[str],
+        kind: str | None,
+        limit: int,
+        seen: set[str],
+    ) -> list[tuple]:
+        """Find entries whose name has one word while parent folders have the rest."""
+        results: list[tuple] = []
+        # Longer words are usually rarer, so they make cheaper index lookups.
+        for anchor in sorted(indexed, key=len, reverse=True)[:2]:
+            if len(results) >= limit:
+                break
+            conditions = ["entries_fts MATCH ?"]
+            parameters: list[object] = [_fts_phrase(anchor)]
+            if kind:
+                conditions.append("entries.kind = ?")
+                parameters.append(kind)
+            for token in tokens:
+                if token != anchor:
+                    conditions.append("lower(entries.path) LIKE ? ESCAPE '\\'")
+                    parameters.append("%" + _escape_like(token) + "%")
+            parameters.append(limit + len(seen))
+            rows = connection.execute(
+                f"""
+                SELECT {_RESULT_COLUMNS}
+                FROM entries
+                JOIN entries_fts ON entries.id = entries_fts.rowid
+                WHERE {" AND ".join(conditions)}
+                ORDER BY {_NOISE_SQL}, length(entries.path)
+                LIMIT ?
+                """,
+                parameters,
+            ).fetchall()
+            for row in rows:
+                if len(results) >= limit:
+                    break
+                if row[0] not in seen:
+                    seen.add(row[0])
+                    results.append(row)
+        return results
 
     def _search_folder_paths(
         self,
@@ -359,6 +423,10 @@ class SearchDatabase:
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (str(time.time()),),
             )
+
+
+def _fts_phrase(token: str) -> str:
+    return '"' + token.replace('"', '""') + '"'
 
 
 def _escape_like(value: str) -> str:

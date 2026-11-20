@@ -19,6 +19,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 from .catalog import ApplicationCatalog
 from .database import SearchDatabase
 from .models import SearchResult
+from .ranking import is_indexable, sort_key, tokenize
 
 LOGGER = logging.getLogger(__name__)
 SEARCH_TYPES = ("everything", "apps", "files", "folders")
@@ -159,8 +160,8 @@ class SearchWindow(Adw.ApplicationWindow):
             self.search_hint = ""
             self._apply_results(generation, app_results)
             return
-        if len(query.strip()) < 3:
-            self.search_hint = "Type at least 3 characters to search files and folders"
+        if not is_indexable(query):
+            self.search_hint = "Type a word of at least 3 characters to search files and folders"
             self._apply_results(
                 generation, app_results if mode == "everything" else []
             )
@@ -192,11 +193,11 @@ class SearchWindow(Adw.ApplicationWindow):
     def _apply_results(self, generation: int, results: list[SearchResult]) -> bool:
         if generation != self.search_generation:
             return GLib.SOURCE_REMOVE
-        query = self.search.get_text().strip().casefold()
+        tokens = tokenize(self.search.get_text())
         if self.sort_enabled.get_active():
             results = self._sort_results(results)
         else:
-            results.sort(key=lambda result: _relevance(result, query))
+            results.sort(key=lambda result: sort_key(result, tokens))
         self.results = results[: self.result_limit]
         for future in self.thumbnail_futures:
             future.cancel()
@@ -467,19 +468,6 @@ class SearchWindow(Adw.ApplicationWindow):
                 self._on_context_click(None, 1, 20, row.get_height() / 2, row)
                 return True
         return False
-
-
-def _relevance(result: SearchResult, query: str) -> tuple[int, int, str]:
-    name = result.name.casefold()
-    if name == query:
-        tier = 0
-    elif name.startswith(query):
-        tier = 1
-    elif query in name:
-        tier = 2
-    else:
-        tier = 3
-    return tier, len(name), name
 
 
 def _icon_name(kind: str) -> str:

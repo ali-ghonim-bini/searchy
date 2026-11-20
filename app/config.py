@@ -38,7 +38,7 @@ class Config:
 
     @classmethod
     def load(cls, env_file: Path | None = None) -> "Config":
-        values = _read_env(env_file or Path(".env"))
+        values = _read_env(env_file or Path(__file__).resolve().parent.parent / ".env")
 
         def value(name: str, default: str) -> str:
             return os.environ.get(name, values.get(name, default))
@@ -62,7 +62,7 @@ class Config:
             ).expanduser(),
             result_limit=_positive_int(value("RESULT_LIMIT", "100"), "RESULT_LIMIT"),
             index_interval_seconds=_positive_int(
-                value("INDEX_INTERVAL_SECONDS", "300"), "INDEX_INTERVAL_SECONDS"
+                value("INDEX_INTERVAL_SECONDS", "3600"), "INDEX_INTERVAL_SECONDS"
             ),
             default_search_type=search_type,
         )

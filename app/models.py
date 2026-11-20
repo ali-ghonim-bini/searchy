@@ -15,3 +15,4 @@ class SearchResult:
     source_path: Path | None = None
     icon: Any = None
     payload: Any = None
+    keywords: str = ""

@@ -11,6 +11,7 @@ from gi.repository import Gio
 
 from .birthtime import creation_time
 from .models import SearchResult
+from .ranking import NO_MATCH, name_tier, tokenize
 
 
 class ApplicationCatalog:
@@ -36,21 +37,24 @@ class ApplicationCatalog:
                     source_path=executable,
                     icon=app.get_icon(),
                     payload=app,
+                    keywords=_keywords(app, app_id),
                 )
             )
         self.results = results
 
     def search(self, query: str, limit: int) -> list[SearchResult]:
-        needle = query.strip().casefold()
-        matches = [
-            result
-            for result in self.results
-            if not needle
-            or needle in result.name.casefold()
-            or needle in result.detail.casefold()
-        ]
-        matches.sort(key=lambda result: _rank(result, needle))
-        return matches[:limit]
+        tokens = tokenize(query)
+        ranked = []
+        for result in self.results:
+            tier = name_tier(result.name, tokens)
+            if tier == NO_MATCH:
+                # Fall back to the description, keywords, and executable name.
+                if not all(token in result.keywords for token in tokens):
+                    continue
+            name = result.name.casefold()
+            ranked.append((tier, len(name), name, result))
+        ranked.sort(key=lambda item: item[:3])
+        return [item[3] for item in ranked[:limit]]
 
 
 def _resolve_executable(executable: str | None) -> Path | None:
@@ -64,14 +68,13 @@ def _resolve_executable(executable: str | None) -> Path | None:
     return path.resolve() if path.is_file() else None
 
 
-def _rank(result: SearchResult, needle: str) -> tuple[int, int, str]:
-    name = result.name.casefold()
-    if name == needle:
-        tier = 0
-    elif name.startswith(needle):
-        tier = 1
-    elif needle in name:
-        tier = 2
-    else:
-        tier = 3
-    return tier, len(name), name
+def _keywords(app, app_id: str) -> str:
+    parts = [app.get_description(), app.get_executable(), app_id]
+    # Desktop entries also carry a generic name and keywords ("browser", "terminal").
+    for getter in ("get_generic_name", "get_keywords"):
+        try:
+            value = getattr(app, getter)()
+        except (AttributeError, TypeError):
+            continue
+        parts.extend(value if isinstance(value, list) else [value])
+    return " ".join(part for part in parts if part).casefold()

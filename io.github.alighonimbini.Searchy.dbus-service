@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=io.github.alighonimbini.Searchy
+Exec=/usr/bin/systemctl --user start searchy.service
+SystemdService=searchy.service

@@ -3,7 +3,7 @@
 Searchy is an instant GTK 4 desktop search application for Ubuntu GNOME on
 Wayland. It searches installed applications and indexed file and folder names
 under the configured roots. Searchy runs as a user service and opens with a
-customizable GNOME shortcut, Alt+S by default.
+customizable GNOME shortcut, Alt+F by default.
 
 ## Features
 
@@ -45,7 +45,7 @@ colon-separated list.
 ```dotenv
 SEARCH_ROOTS=/home/bini
 DATABASE_PATH=~/.local/state/searchy/index.sqlite3
-NATIVE_SHORTCUT='<Alt>s'
+NATIVE_SHORTCUT='<Alt>f'
 DEFAULT_SEARCH_TYPE=everything
 RESULT_LIMIT=100
 INDEX_INTERVAL_SECONDS=3600
@@ -59,7 +59,7 @@ directory is excluded.
 
 ## Usage
 
-1. Press Alt+S.
+1. Press Alt+F.
 2. Enter part of an application name, filename, or path.
 3. Choose Everything, Apps, Files, or Folders beside the search field.
 4. Optionally enable Sort results and choose the field and direction.
@@ -67,8 +67,18 @@ directory is excluded.
 6. Right-click for Open or Open Source Location.
 
 Escape hides the window while the indexing service remains active.
-Application results appear immediately. File and folder searches start after
-three characters so large indexes never fall back to an unbounded scan.
+Pressing the shortcut again while Searchy is open hides it. The service
+starts with the graphical session, and the shortcut starts it on demand if it
+is not running.
+
+Application results appear immediately. File and folder searches need one word
+of at least three characters so large indexes never fall back to an unbounded
+scan.
+
+Words match in any order, so `2024 report` finds `Annual Report 2024.pdf`. A
+word may also match a parent folder: `invoices march` finds `march.pdf` inside
+`invoices/`. Applications also match by keyword (`browser`), initials (`vsc`),
+and small typos. Hidden and dependency directories rank below other matches.
 
 ## Logs
 

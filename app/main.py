@@ -8,8 +8,9 @@ import sys
 import gi
 
 gi.require_version("Adw", "1")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Gio", "2.0")
-from gi.repository import Adw, Gio, GLib
+from gi.repository import Adw, Gdk, Gio, GLib
 
 from .catalog import ApplicationCatalog
 from .config import Config
@@ -36,10 +37,29 @@ class SearchyApplication(Adw.Application):
         self.catalog: ApplicationCatalog | None = None
         self.window: SearchWindow | None = None
         self.indexer: FileIndexer | None = None
+        self.app_monitor: Gio.AppInfoMonitor | None = None
+        self.exit_code = 0
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
         self.hold()
+        # A failed startup must end the process: otherwise it keeps the bus name
+        # with no window and the shortcut silently does nothing.
+        try:
+            self._start()
+        except Exception:
+            LOGGER.exception("Searchy failed to start")
+            self._fail()
+
+    def _fail(self) -> None:
+        self.exit_code = 1
+        self.quit()
+
+    def _start(self) -> None:
+        if Gdk.Display.get_default() is None:
+            LOGGER.error("No Wayland display is available")
+            self._fail()
+            return
         action = Gio.SimpleAction.new("show-search", None)
         action.connect("activate", lambda _action, _parameter: self.show_search())
         self.add_action(action)
@@ -60,6 +80,9 @@ class SearchyApplication(Adw.Application):
             lambda message: GLib.idle_add(self._set_index_status, message),
         )
         self.indexer.start()
+        # Keep a reference: the monitor stops emitting once it is collected.
+        self.app_monitor = Gio.AppInfoMonitor.get()
+        self.app_monitor.connect("changed", lambda _monitor: self.catalog.refresh())
         LOGGER.info("Searchy service started")
 
     def do_shutdown(self) -> None:
@@ -70,8 +93,16 @@ class SearchyApplication(Adw.Application):
         Adw.Application.do_shutdown(self)
 
     def show_search(self) -> None:
-        if self.window:
+        if self.window is None:
+            LOGGER.error("Cannot show search: window is not initialized")
+            return
+        # The shortcut toggles: pressing it while the window is open hides it.
+        if self.window.get_visible():
+            self.window.set_visible(False)
+            LOGGER.info("Search window hidden")
+        else:
             self.window.show_search()
+            LOGGER.info("Search window shown")
 
     def _set_index_status(self, message: str) -> bool:
         if self.window:
@@ -80,14 +111,23 @@ class SearchyApplication(Adw.Application):
 
 
 def main() -> int:
+    def log_unhandled(error_type, error, traceback) -> None:
+        LOGGER.critical("Unhandled exception", exc_info=(error_type, error, traceback))
+
+    sys.excepthook = log_unhandled
     try:
         config = Config.load()
     except ValueError as error:
         LOGGER.error("Invalid configuration: %s", error)
         return 2
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        # Exit non-zero so systemd retries once the session exports the display.
+        LOGGER.error("WAYLAND_DISPLAY is not set; the graphical session is not ready")
+        return 1
     application = SearchyApplication(config)
     signal.signal(signal.SIGTERM, lambda _signum, _frame: application.quit())
-    return application.run(sys.argv)
+    status = application.run(sys.argv)
+    return status or application.exit_code
 
 
 if __name__ == "__main__":

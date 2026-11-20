@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import re
+
+from .models import SearchResult
+
+# File and folder names are indexed as trigrams, so shorter words cannot use the index.
+MIN_INDEXED_LENGTH = 3
+NO_MATCH = 6
+_WORDS = re.compile(r"[^\W_]+")
+_NOISE_PARTS = ("/.", "/node_modules/", "/__pycache__/")
+
+
+def tokenize(query: str) -> list[str]:
+    return query.casefold().split()
+
+
+def is_indexable(query: str) -> bool:
+    return any(len(token) >= MIN_INDEXED_LENGTH for token in tokenize(query))
+
+
+def name_tier(name: str, tokens: list[str]) -> int:
+    """Lower is better: 0 exact, 1 prefix, 2 word starts, 3 contains, 4 initials, 5 fuzzy."""
+    if not tokens:
+        return 0
+    folded = name.casefold()
+    full = " ".join(tokens)
+    if folded == full or folded.rpartition(".")[0] == full:
+        return 0
+    if folded.startswith(full):
+        return 1
+    words = _WORDS.findall(folded)
+    if all(any(word.startswith(token) for word in words) for token in tokens):
+        return 2
+    if all(token in folded for token in tokens):
+        return 3
+    if len(tokens) == 1 and len(full) >= 2:
+        if "".join(word[0] for word in words).startswith(full):
+            return 4
+        if len(full) >= MIN_INDEXED_LENGTH and _is_subsequence(full, folded):
+            return 5
+    return NO_MATCH
+
+
+def is_noise(path: str) -> bool:
+    """Hidden and dependency directories are rarely what a search is looking for."""
+    return any(part in path for part in _NOISE_PARTS)
+
+
+def sort_key(result: SearchResult, tokens: list[str]) -> tuple:
+    name = result.name.casefold()
+    return (
+        name_tier(result.name, tokens),
+        0 if result.kind == "app" else 1,
+        is_noise(str(result.path)) if result.path else False,
+        len(name),
+        name,
+    )
+
+
+def _is_subsequence(needle: str, haystack: str) -> bool:
+    """Typo-tolerant match: letters in order, from the first letter, close together."""
+    if not haystack.startswith(needle[0]):
+        return False
+    position = -1
+    for character in needle:
+        position = haystack.find(character, position + 1)
+        if position < 0:
+            return False
+    return position <= 2 * len(needle)

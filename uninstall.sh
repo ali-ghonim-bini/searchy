@@ -3,6 +3,7 @@ set -eu
 
 service_file="${HOME}/.config/systemd/user/searchy.service"
 application_file="${HOME}/.local/share/applications/io.github.alighonimbini.Searchy.desktop"
+dbus_service_file="${HOME}/.local/share/dbus-1/services/io.github.alighonimbini.Searchy.service"
 icon_root="${HOME}/.local/share/icons/hicolor"
 icon_file="${icon_root}/512x512/apps/io.github.alighonimbini.Searchy.png"
 binding_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/searchy/"
@@ -10,7 +11,7 @@ media_schema="org.gnome.settings-daemon.plugins.media-keys"
 binding_schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:${binding_path}"
 
 systemctl --user disable --now searchy.service 2>/dev/null || true
-rm -f "$service_file" "$application_file" "$icon_file"
+rm -f "$service_file" "$application_file" "$dbus_service_file" "$icon_file"
 if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -d "$icon_root" ]; then
     gtk-update-icon-cache -f -t "$icon_root"
 fi
