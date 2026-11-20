@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Dependency and package directories hold most files on a typical home directory.
+DEFAULT_EXCLUDE = "node_modules:__pycache__:site-packages:venv:~/snap"
+
+
 def _read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
@@ -16,6 +20,15 @@ def _read_env(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip().strip("'\"")
     return values
+
+
+def _boolean(value: str, name: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
 
 
 def _positive_int(value: str, name: str) -> int:
@@ -35,6 +48,8 @@ class Config:
     result_limit: int
     index_interval_seconds: int
     default_search_type: str
+    exclude_patterns: tuple[str, ...]
+    index_hidden: bool
 
     @classmethod
     def load(cls, env_file: Path | None = None) -> "Config":
@@ -65,4 +80,10 @@ class Config:
                 value("INDEX_INTERVAL_SECONDS", "3600"), "INDEX_INTERVAL_SECONDS"
             ),
             default_search_type=search_type,
+            exclude_patterns=tuple(
+                item.strip()
+                for item in value("EXCLUDE", DEFAULT_EXCLUDE).split(":")
+                if item.strip()
+            ),
+            index_hidden=_boolean(value("INDEX_HIDDEN", "false"), "INDEX_HIDDEN"),
         )

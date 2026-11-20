@@ -15,6 +15,7 @@ from gi.repository import Adw, Gdk, Gio, GLib
 from .catalog import ApplicationCatalog
 from .config import Config
 from .database import SearchDatabase
+from .excludes import PathFilter
 from .indexer import FileIndexer
 from .ui import SearchWindow
 
@@ -64,6 +65,17 @@ class SearchyApplication(Adw.Application):
         action.connect("activate", lambda _action, _parameter: self.show_search())
         self.add_action(action)
         self.database = SearchDatabase(self.config.database_path)
+        path_filter = PathFilter.create(
+            self.config.database_path.parent,
+            self.config.exclude_patterns,
+            self.config.index_hidden,
+        )
+        # Entries indexed under other rules would linger, so start a fresh index.
+        rules = repr((sorted(map(str, self.config.search_roots)), path_filter.signature()))
+        if self.database.index_rules() != rules:
+            LOGGER.info("Index rules changed; rebuilding the index")
+            self.database.reset()
+            self.database.set_index_rules(rules)
         self.catalog = ApplicationCatalog()
         self.window = SearchWindow(
             self,
@@ -75,7 +87,7 @@ class SearchyApplication(Adw.Application):
         self.indexer = FileIndexer(
             self.database,
             self.config.search_roots,
-            self.config.database_path.parent,
+            path_filter,
             self.config.index_interval_seconds,
             lambda message: GLib.idle_add(self._set_index_status, message),
         )

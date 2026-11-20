@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .birthtime import creation_time
 from .database import IndexedPath, SearchDatabase
+from .excludes import PathFilter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,13 +45,13 @@ class FileIndexer:
         self,
         database: SearchDatabase,
         roots: tuple[Path, ...],
-        excluded_root: Path,
+        path_filter: PathFilter,
         interval: int,
         on_status: Callable[[str], None],
     ):
         self.database = database
         self.roots = roots
-        self.excluded_root = excluded_root.resolve()
+        self.path_filter = path_filter
         self.interval = interval
         self.on_status = on_status
         self.stop_event = threading.Event()
@@ -79,7 +80,7 @@ class FileIndexer:
                 if folder_count < watch_limit:
                     watcher = _InotifyWatcher(
                         self.roots,
-                        self.excluded_root,
+                        self.path_filter,
                         self.database,
                         self.stop_event,
                     )
@@ -133,8 +134,6 @@ class FileIndexer:
         pending = [root]
         while pending:
             directory = pending.pop()
-            if _is_excluded(directory, self.excluded_root):
-                continue
             indexed = _metadata(directory)
             if indexed:
                 yield indexed
@@ -145,11 +144,10 @@ class FileIndexer:
                 continue
             for child in children:
                 path = Path(child.path)
-                if _is_excluded(path, self.excluded_root):
-                    continue
                 try:
                     if child.is_dir(follow_symlinks=False):
-                        pending.append(path)
+                        if not self.path_filter.skips_directory(path):
+                            pending.append(path)
                     else:
                         indexed = _metadata(path)
                         if indexed:
@@ -162,12 +160,12 @@ class _InotifyWatcher:
     def __init__(
         self,
         roots: tuple[Path, ...],
-        excluded_root: Path,
+        path_filter: PathFilter,
         database: SearchDatabase,
         stop_event: threading.Event,
     ):
         self.roots = roots
-        self.excluded_root = excluded_root
+        self.path_filter = path_filter
         self.database = database
         self.stop_event = stop_event
         self.paths: dict[int, Path] = {}
@@ -193,10 +191,8 @@ class _InotifyWatcher:
             subdirectories[:] = [
                 name
                 for name in subdirectories
-                if not _is_excluded(path / name, self.excluded_root)
+                if not self.path_filter.skips_directory(path / name)
             ]
-            if _is_excluded(path, self.excluded_root):
-                continue
             wd = self.libc.inotify_add_watch(
                 self.fd, os.fsencode(path), ctypes.c_uint32(WATCH_MASK)
             )
@@ -226,6 +222,8 @@ class _InotifyWatcher:
             if directory is None:
                 continue
             path = directory / os.fsdecode(raw_name) if raw_name else directory
+            if raw_name and mask & IN_ISDIR and self.path_filter.skips_directory(path):
+                continue
             if mask & (IN_DELETE | IN_MOVED_FROM | IN_DELETE_SELF | IN_MOVE_SELF):
                 self.database.delete_path(path)
             if mask & (IN_CREATE | IN_MOVED_TO | IN_CLOSE_WRITE | IN_ATTRIB):
@@ -246,14 +244,6 @@ def _metadata(path: Path) -> IndexedPath | None:
         return IndexedPath(path, kind, creation_time(path), stat.st_mtime)
     except (OSError, PermissionError):
         return None
-
-
-def _is_excluded(path: Path, excluded_root: Path) -> bool:
-    try:
-        path.resolve().relative_to(excluded_root)
-        return True
-    except (ValueError, OSError):
-        return False
 
 
 def _inotify_watch_limit() -> int:
