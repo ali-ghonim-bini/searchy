@@ -53,6 +53,7 @@ EXCLUDE=node_modules:__pycache__:site-packages:venv:~/snap
 INDEX_HIDDEN=false
 REMEMBER_USAGE=true
 HIDE_ON_FOCUS_LOSS=true
+SHOW_PREVIEW=true
 WEB_SEARCH_URL='https://duckduckgo.com/?q={query}'
 LOG_LEVEL=INFO
 ```
@@ -139,6 +140,13 @@ Searchy opens as a launcher panel without a title bar. Drag any empty area to
 move it. It hides when you open a result, press Escape, press the shortcut
 again, or click another window. Set `HIDE_ON_FOCUS_LOSS=false` to keep it open
 when another window takes focus.
+
+### Preview
+
+Selecting a file or folder shows a pane on the right with its type, size, last
+change and location. Images are shown, text files show their first lines, and
+folders show how many items they hold. Files are only read when selected, and
+only the first 4 kB of a text file. Set `SHOW_PREVIEW=false` to hide the pane.
 
 ### Keyboard
 

@@ -20,6 +20,7 @@ from .catalog import ApplicationCatalog
 from .database import SearchDatabase
 from .extras import calculator_result, recent_files, web_result
 from .models import SearchResult
+from .preview import Preview, describe
 from .query import parse_query
 from .ranking import match_spans, sort_key
 from .usage import UsageStore
@@ -30,6 +31,7 @@ SEARCH_TYPES = ("everything", "apps", "files", "folders")
 QUICK_OPEN_COUNT = 9
 RECENT_FILE_COUNT = 8
 FOCUS_CHECK_MS = 150
+PREVIEW_WIDTH = 280
 _DIGIT_KEYS = {
     getattr(Gdk, f"{prefix}{digit}"): digit - 1
     for prefix in ("KEY_", "KEY_KP_")
@@ -48,6 +50,7 @@ class SearchWindow(Adw.ApplicationWindow):
         default_search_type: str,
         hide_on_focus_loss: bool = True,
         web_search_url: str = "",
+        show_preview: bool = True,
     ):
         super().__init__(application=application, title="Searchy")
         self.database = database
@@ -71,7 +74,9 @@ class SearchWindow(Adw.ApplicationWindow):
         self.dialog_open = False
         self.focus_check_id = 0
         self.highlight_tokens: list[str] = []
-        self.set_default_size(760, 560)
+        self.show_preview = show_preview
+        self.preview_generation = 0
+        self.set_default_size(1000 if show_preview else 760, 560)
         self.connect("close-request", self._on_close_request)
         self.connect("notify::is-active", self._on_active_changed)
         _install_style()
@@ -127,8 +132,13 @@ class SearchWindow(Adw.ApplicationWindow):
         self.list_box.set_activate_on_single_click(False)
         self.list_box.add_css_class("boxed-list")
         self.list_box.connect("row-activated", self._on_row_activated)
+        self.list_box.connect("row-selected", self._on_row_selected)
         scroller.set_child(self.list_box)
-        content.append(scroller)
+        scroller.set_hexpand(True)
+        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        body.append(scroller)
+        body.append(self._build_preview())
+        content.append(body)
 
         self.status = Gtk.Label(label="Preparing index...", xalign=0)
         self.status.add_css_class("dim-label")
@@ -138,6 +148,72 @@ class SearchWindow(Adw.ApplicationWindow):
         keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._on_key_pressed)
         self.add_controller(keys)
+
+    def _build_preview(self) -> Gtk.Widget:
+        self.preview_image = Gtk.Picture()
+        self.preview_image.set_can_shrink(True)
+        self.preview_image.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self.preview_image.set_size_request(-1, 180)
+        self.preview_title = Gtk.Label(xalign=0, wrap=True)
+        self.preview_title.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.preview_title.add_css_class("heading")
+        self.preview_details = Gtk.Label(xalign=0, wrap=True, selectable=False)
+        self.preview_details.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.preview_details.add_css_class("dim-label")
+        self.preview_text = Gtk.Label(xalign=0, yalign=0, wrap=False)
+        self.preview_text.set_ellipsize(Pango.EllipsizeMode.END)
+        self.preview_text.add_css_class("monospace")
+        self.preview_text.add_css_class("caption")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        for widget in (
+            self.preview_image, self.preview_title, self.preview_details, self.preview_text,
+        ):
+            box.append(widget)
+        self.preview_pane = Gtk.ScrolledWindow()
+        self.preview_pane.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.preview_pane.set_size_request(PREVIEW_WIDTH, -1)
+        self.preview_pane.set_child(box)
+        self.preview_pane.set_visible(False)
+        return self.preview_pane
+
+    def _on_row_selected(self, list_box: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
+        self.preview_generation += 1
+        result = row.result if row else None
+        if not self.show_preview or result is None or result.path is None:
+            self.preview_pane.set_visible(False)
+            return
+        generation = self.preview_generation
+        self.preview_title.set_text(result.name)
+        self.preview_details.set_text("")
+        self.preview_text.set_visible(False)
+        self.preview_image.set_visible(False)
+        self.preview_pane.set_visible(True)
+        future = self.thumbnail_executor.submit(_load_preview, result.path)
+
+        def ready(task) -> None:
+            try:
+                loaded = task.result()
+            except Exception:
+                LOGGER.debug("Cannot preview %s", result.path)
+                return
+            GLib.idle_add(self._show_preview, generation, *loaded)
+
+        future.add_done_callback(ready)
+
+    def _show_preview(self, generation: int, preview: Preview, pixbuf) -> bool:
+        # A newer selection has replaced this one while it was loading.
+        if generation != self.preview_generation:
+            return GLib.SOURCE_REMOVE
+        self.preview_title.set_text(preview.title)
+        self.preview_details.set_text(
+            "\n".join(f"{label}: {value}" for label, value in preview.details)
+        )
+        self.preview_text.set_text(preview.text or "")
+        self.preview_text.set_visible(bool(preview.text))
+        if pixbuf is not None:
+            self.preview_image.set_paintable(Gdk.Texture.new_for_pixbuf(pixbuf))
+        self.preview_image.set_visible(pixbuf is not None)
+        return GLib.SOURCE_REMOVE
 
     def show_search(self) -> None:
         self._refresh_creation_sort()
@@ -675,6 +751,18 @@ def _is_image_result(result: SearchResult) -> bool:
         return False
     mime_type, _encoding = mimetypes.guess_type(result.path.name)
     return mime_type is not None and mime_type.startswith("image/")
+
+
+def _load_preview(path) -> tuple[Preview, GdkPixbuf.Pixbuf | None]:
+    """Runs off the main thread: reads the file's details and, for images, a scaled copy."""
+    preview = describe(path)
+    pixbuf = None
+    if preview.is_image:
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), 520, 360, True)
+        except GLib.Error:
+            pixbuf = None
+    return preview, pixbuf
 
 
 def _load_thumbnail(path) -> GdkPixbuf.Pixbuf:
