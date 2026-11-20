@@ -5,9 +5,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import DEFAULT_EXCLUDE, DEFAULT_WEB_SEARCH_URL, Config
+from .config import DEFAULT_EXCLUDE, DEFAULT_WEB_SEARCH_URL, Config, env_path
 
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+ENV_PATH = env_path()
 SHORTCUT_KEY = "NATIVE_SHORTCUT"
 _SAFE_VALUE = re.compile(r"[A-Za-z0-9_./:~,-]*")
 _ASSIGNMENT = re.compile(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
@@ -75,6 +75,7 @@ def write_values(path: Path, values: dict[str, str]) -> None:
         else:
             output.append(line)
     output.extend(f"{key}={value}" for key, value in remaining.items())
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text("\n".join(output) + "\n", encoding="utf-8")
     temporary.chmod(0o600)
@@ -176,6 +177,24 @@ def shortcut_command(binding: str) -> list[str]:
     """The gsettings call that moves the GNOME shortcut install.sh created."""
     schema = f"org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{_BINDING_PATH}"
     return ["gsettings", "set", schema, "binding", binding]
+
+
+def keybinding_commands(binding: str, current_list: str) -> list[list[str]]:
+    """The gsettings calls that create the GNOME shortcut, as install.sh does."""
+    import ast
+
+    raw = current_list[4:] if current_list.startswith("@as ") else current_list
+    paths = [item for item in ast.literal_eval(raw or "[]") if item != _BINDING_PATH]
+    paths.append(_BINDING_PATH)
+    schema = f"org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{_BINDING_PATH}"
+    return [
+        ["gsettings", "set", "org.gnome.settings-daemon.plugins.media-keys",
+         "custom-keybindings", repr(paths)],
+        ["gsettings", "set", schema, "name", "Searchy"],
+        ["gsettings", "set", schema, "command",
+         "gapplication action io.github.alighonimbini.Searchy show-search"],
+        ["gsettings", "set", schema, "binding", binding],
+    ]
 
 
 RESTART_COMMAND = ["systemctl", "--user", "restart", "searchy.service"]

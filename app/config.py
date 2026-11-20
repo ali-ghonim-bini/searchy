@@ -12,6 +12,20 @@ DEFAULT_EXCLUDE = "node_modules:__pycache__:site-packages:venv:~/snap"
 DEFAULT_WEB_SEARCH_URL = "https://duckduckgo.com/?q={query}"
 
 
+def env_path(
+    environ: dict[str, str] | None = None, project: Path | None = None
+) -> Path:
+    """Where settings live: a checkout keeps `.env` beside the code, a package per user."""
+    environ = os.environ if environ is None else environ
+    if environ.get("SEARCHY_ENV_FILE"):
+        return Path(environ["SEARCHY_ENV_FILE"]).expanduser()
+    project = project or Path(__file__).resolve().parent.parent
+    if (project / ".env").is_file() or os.access(project, os.W_OK):
+        return project / ".env"
+    config_home = environ.get("XDG_CONFIG_HOME") or "~/.config"
+    return Path(config_home).expanduser() / "searchy" / ".env"
+
+
 def _read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
@@ -72,7 +86,7 @@ class Config:
         cls, env_file: Path | None = None, environ: dict[str, str] | None = None
     ) -> "Config":
         environ = os.environ if environ is None else environ
-        values = _read_env(env_file or Path(__file__).resolve().parent.parent / ".env")
+        values = _read_env(env_file or env_path())
 
         def value(name: str, default: str) -> str:
             return environ.get(name, values.get(name, default))

@@ -71,6 +71,36 @@ class SettingsFileTests(unittest.TestCase):
         self.assertEqual(loaded.result_limit, 7)
         self.assertEqual(Config.load(self.path, environ={}).result_limit, 100)
 
+    def test_settings_location_for_checkout_and_package(self) -> None:
+        import os
+
+        from app.config import env_path
+
+        project = self.path.parent
+        self.assertEqual(env_path({}, project), project / ".env")
+        self.assertEqual(env_path({"SEARCHY_ENV_FILE": "/x/custom.env"}, project), Path("/x/custom.env"))
+        packaged = project / "usr-share-searchy"
+        packaged.mkdir()
+        packaged.chmod(0o555)
+        self.addCleanup(packaged.chmod, 0o755)
+        if os.access(packaged, os.W_OK):
+            self.skipTest("running as a user who can write anywhere")
+        self.assertEqual(
+            env_path({"XDG_CONFIG_HOME": "/cfg"}, packaged), Path("/cfg/searchy/.env")
+        )
+        self.assertEqual(env_path({}, packaged), Path.home() / ".config/searchy/.env")
+
+    def test_keybinding_commands_keep_other_shortcuts(self) -> None:
+        commands = settings.keybinding_commands("<Alt>f", "@as ['/other/', '%s']" % settings._BINDING_PATH)
+        self.assertEqual(commands[0][-1], repr(["/other/", settings._BINDING_PATH]))
+        self.assertEqual(commands[-1][-2:], ["binding", "<Alt>f"])
+        self.assertEqual(settings.keybinding_commands("<Alt>f", "@as []")[0][-1], repr([settings._BINDING_PATH]))
+
+    def test_saving_creates_the_settings_folder(self) -> None:
+        nested = self.path.parent / "config" / "searchy" / ".env"
+        settings.save(nested, settings.read_values(nested))
+        self.assertTrue(nested.is_file())
+
     def test_shortcut_command(self) -> None:
         command = settings.shortcut_command("<Super>space")
         self.assertEqual((command[:2], command[-2:]), (["gsettings", "set"], ["binding", "<Super>space"]))

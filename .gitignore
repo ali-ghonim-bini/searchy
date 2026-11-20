@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 /logo.jpg
 /logo.png
+/dist/

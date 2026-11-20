@@ -37,6 +37,30 @@ systemctl --user status searchy.service
 journalctl --user -u searchy.service -f
 ```
 
+### Installing as a package
+
+To install Searchy system-wide instead of running it from a checkout, build a
+`.deb` and install it:
+
+```bash
+./packaging/build-deb.sh
+```
+
+```bash
+sudo apt install ./dist/searchy_2.0.0_all.deb
+```
+
+Then each user runs once:
+
+```bash
+searchy setup
+```
+
+That sets the GNOME shortcut and starts the service. A packaged install keeps
+its settings in `~/.config/searchy/.env`; a checkout keeps them in `.env`
+beside the code. Do not use both `./install.sh` and the package for the same
+user: run `./uninstall.sh` first.
+
 ## Configuration
 
 Open the settings window with the gear button beside the search box, with
