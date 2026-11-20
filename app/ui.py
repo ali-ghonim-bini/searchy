@@ -19,7 +19,8 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 from .catalog import ApplicationCatalog
 from .database import SearchDatabase
 from .models import SearchResult
-from .ranking import is_indexable, sort_key, tokenize
+from .query import parse_query
+from .ranking import sort_key
 from .usage import UsageStore
 
 LOGGER = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ class SearchWindow(Adw.ApplicationWindow):
         search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.search = Gtk.SearchEntry(
             placeholder_text="Search applications, files, and folders", hexpand=True
+        )
+        self.search.set_tooltip_text(
+            "Filters: ext:pdf  in:Documents  kind:folder (or kind:file, kind:app)"
         )
         self.search.connect("search-changed", self._on_search_changed)
         search_row.append(self.search)
@@ -151,20 +155,26 @@ class SearchWindow(Adw.ApplicationWindow):
         cancel_event = self.search_cancel_event
         self.search_generation += 1
         generation = self.search_generation
-        query = self.search.get_text()
+        query = parse_query(self.search.get_text())
         mode = SEARCH_TYPES[self.search_type.get_selected()]
+        if query.kind:
+            # A kind: filter in the search box overrides the dropdown.
+            mode = {"app": "apps", "file": "files", "folder": "folders"}[query.kind]
         started_at = time.monotonic()
         app_results = (
-            self.catalog.search(query, self.result_limit)
-            if mode in {"everything", "apps"}
+            self.catalog.search(query.text, self.result_limit)
+            if mode in {"everything", "apps"} and not query.has_file_filters
             else []
         )
         if mode == "apps":
             self.search_hint = ""
             self._apply_results(generation, app_results)
             return
-        if not is_indexable(query):
-            self.search_hint = "Type a word of at least 3 characters to search files and folders"
+        if not query.searches_files:
+            self.search_hint = (
+                "Type a word of at least 3 characters, or a filter such as ext:pdf, "
+                "to search files and folders"
+            )
             self._apply_results(
                 generation, app_results if mode == "everything" else []
             )
@@ -185,7 +195,7 @@ class SearchWindow(Adw.ApplicationWindow):
             LOGGER.info(
                 "Search completed: mode=%s query_length=%s results=%s duration_ms=%.1f",
                 mode,
-                len(query.strip()),
+                len(query.text),
                 len(combined),
                 (time.monotonic() - started_at) * 1000,
             )
@@ -196,7 +206,7 @@ class SearchWindow(Adw.ApplicationWindow):
     def _apply_results(self, generation: int, results: list[SearchResult]) -> bool:
         if generation != self.search_generation:
             return GLib.SOURCE_REMOVE
-        tokens = tokenize(self.search.get_text())
+        tokens = list(parse_query(self.search.get_text()).tokens)
         if self.sort_enabled.get_active():
             results = self._sort_results(results)
         else:

@@ -115,6 +115,20 @@ The history is stored in `~/.local/state/searchy/usage.sqlite3`, readable only
 by you, and survives index rebuilds. Set `REMEMBER_USAGE=false` to turn it off;
 delete the file to forget it.
 
+### Filters
+
+Type filters in the search box alongside, or instead of, ordinary words:
+
+| Filter | Finds | Example |
+|---|---|---|
+| `ext:` | Files with that extension; separate several with commas | `invoice ext:pdf`, `ext:jpg,png` |
+| `in:` | Items inside a folder whose name starts with the value | `report in:Documents` |
+| `kind:` | Only `app`, `file`, or `folder`; overrides the dropdown | `projects kind:folder` |
+
+Filters combine: `ext:pdf in:invoices 2024`. A filter on its own is enough to
+search files, so `ext:iso` lists every ISO image. Folder names with spaces are
+not supported in `in:`; use one word of the name.
+
 ## Logs
 
 Searchy writes to the systemd user journal, which handles persistence and

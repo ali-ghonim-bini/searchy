@@ -6,7 +6,8 @@ from pathlib import Path
 
 from app.database import IndexedPath, SearchDatabase
 from app.models import SearchResult
-from app.ranking import NO_MATCH, is_indexable, name_tier, sort_key, tokenize
+from app.query import parse_query
+from app.ranking import NO_MATCH, name_tier, sort_key, tokenize
 
 
 class RankingTests(unittest.TestCase):
@@ -30,14 +31,33 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(name_tier("Firefox", ["xyz"]), NO_MATCH)
 
     def test_indexable_needs_one_long_word(self) -> None:
-        self.assertFalse(is_indexable("ab cd"))
-        self.assertTrue(is_indexable("ab cde"))
+        self.assertFalse(parse_query("ab cd").searches_files)
+        self.assertTrue(parse_query("ab cde").searches_files)
 
     def test_hidden_paths_sort_last_within_a_tier(self) -> None:
         visible = SearchResult("file", "notes.txt", "", None, Path("/home/u/notes.txt"))
         hidden = SearchResult("file", "notes.txt", "", None, Path("/home/u/.cache/notes.txt"))
         tokens = tokenize("notes")
         self.assertLess(sort_key(visible, tokens), sort_key(hidden, tokens))
+
+
+class QueryTests(unittest.TestCase):
+    def test_filters_are_separated_from_words(self) -> None:
+        query = parse_query("Annual ext:.PDF in:Documents/ kind:files report")
+        self.assertEqual(query.tokens, ("annual", "report"))
+        self.assertEqual(query.extensions, ("pdf",))
+        self.assertEqual(query.folders, ("documents",))
+        self.assertEqual(query.kind, "file")
+
+    def test_unknown_or_unfinished_filters(self) -> None:
+        self.assertEqual(parse_query("kind:banana").tokens, ("kind:banana",))
+        self.assertEqual(parse_query("ext: in:").extensions, ())
+        self.assertFalse(parse_query("ext:").searches_files)
+        self.assertEqual(parse_query("12:30").tokens, ("12:30",))
+
+    def test_filter_alone_can_search_files(self) -> None:
+        self.assertTrue(parse_query("ext:pdf").searches_files)
+        self.assertFalse(parse_query("kind:file ab").searches_files)
 
 
 class DatabaseSearchTests(unittest.TestCase):
@@ -78,6 +98,25 @@ class DatabaseSearchTests(unittest.TestCase):
             self.names("report", "file")[:2],
             ["/home/u/Documents/report.pdf", "/home/u/.cache/app/report.pdf"],
         )
+
+    def test_extension_filter(self) -> None:
+        self.assertEqual(self.names("ext:jpg"), ["/home/u/Pictures/holiday.jpg"])
+        self.assertEqual(self.names("report ext:jpg"), [])
+        self.assertEqual(len(self.names("ext:jpg,pdf")), 5)
+
+    def test_folder_filter(self) -> None:
+        self.assertEqual(
+            self.names("ext:pdf in:invoices"), ["/home/u/Documents/invoices/march 2024.pdf"]
+        )
+        self.assertEqual(self.names("report in:pict"), [])
+        self.assertNotIn("/home/u/.cache/app/report.pdf", self.names("report in:doc"))
+
+    def test_kind_filter_in_the_query(self) -> None:
+        self.assertEqual(self.names("invoices kind:folder"), ["/home/u/Documents/invoices"])
+        self.assertEqual(self.names("invoices kind:app"), [])
+
+    def test_filter_does_not_list_unfiltered_folder_contents(self) -> None:
+        self.assertEqual(self.names("invoices ext:jpg"), [])
 
     def test_kind_filter_and_special_characters(self) -> None:
         self.assertEqual(self.names("invoices", "folder"), ["/home/u/Documents/invoices"])

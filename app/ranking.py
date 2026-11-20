@@ -15,10 +15,6 @@ def tokenize(query: str) -> list[str]:
     return query.casefold().split()
 
 
-def is_indexable(query: str) -> bool:
-    return any(len(token) >= MIN_INDEXED_LENGTH for token in tokenize(query))
-
-
 def name_tier(name: str, tokens: list[str]) -> int:
     """Lower is better: 0 exact, 1 prefix, 2 word starts, 3 contains, 4 initials, 5 fuzzy."""
     if not tokens:
