@@ -121,11 +121,14 @@ class SearchDatabase:
                     """
                 )
 
-    def reset(self) -> None:
+    def reset(self, keep_rules: bool = False) -> None:
         """Discard the index file; deleting most rows one by one is far slower."""
+        rules = self.index_rules() if keep_rules else None
         for suffix in ("", "-wal", "-shm"):
             Path(str(self.path) + suffix).unlink(missing_ok=True)
         self._initialize()
+        if rules is not None:
+            self.set_index_rules(rules)
 
     def index_rules(self) -> str | None:
         with self._connection() as connection:
@@ -429,12 +432,16 @@ class SearchDatabase:
                 ).fetchone()[0]
             )
 
-    def index_is_fresh(self, interval: int) -> bool:
+    def last_completed_at(self) -> float | None:
         with self._connection() as connection:
             row = connection.execute(
                 "SELECT value FROM metadata WHERE key = 'last_completed_at'"
             ).fetchone()
-        return row is not None and time.time() - float(row[0]) < interval
+        return float(row[0]) if row else None
+
+    def index_is_fresh(self, interval: int) -> bool:
+        completed_at = self.last_completed_at()
+        return completed_at is not None and time.time() - completed_at < interval
 
 
 def _filter_conditions(query: Query, kind: str | None) -> tuple[list[str], list[object]]:

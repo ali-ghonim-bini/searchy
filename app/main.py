@@ -65,6 +65,10 @@ class SearchyApplication(Adw.Application):
         action = Gio.SimpleAction.new("show-search", None)
         action.connect("activate", lambda _action, _parameter: self.show_search())
         self.add_action(action)
+        for name, rebuild in (("reindex", False), ("rebuild-index", True)):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", self._on_reindex, rebuild)
+            self.add_action(action)
         self.database = SearchDatabase(self.config.database_path)
         path_filter = PathFilter.create(
             self.config.database_path.parent,
@@ -124,6 +128,13 @@ class SearchyApplication(Adw.Application):
         else:
             self.window.show_search()
             LOGGER.info("Search window shown")
+
+    def _on_reindex(self, _action, _parameter, rebuild: bool) -> None:
+        if self.indexer is None:
+            LOGGER.error("Cannot reindex: the indexer is not running")
+            return
+        LOGGER.info("Reindex requested (rebuild=%s)", rebuild)
+        self.indexer.request_reindex(rebuild)
 
     def _set_index_status(self, message: str) -> bool:
         if self.window:
