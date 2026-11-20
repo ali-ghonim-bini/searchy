@@ -51,6 +51,7 @@ RESULT_LIMIT=100
 INDEX_INTERVAL_SECONDS=3600
 EXCLUDE=node_modules:__pycache__:site-packages:venv:~/snap
 INDEX_HIDDEN=false
+INDEX_REMOVABLE=false
 REMEMBER_USAGE=true
 HIDE_ON_FOCUS_LOSS=true
 SHOW_PREVIEW=true
@@ -71,6 +72,11 @@ Searchy skips the directories that hold most files but are rarely searched:
   everything.
 - A directory listed in `SEARCH_ROOTS` is always indexed, even when hidden, so
   `SEARCH_ROOTS=~:~/.config` adds one hidden directory back.
+
+- `INDEX_REMOVABLE=true` also indexes USB sticks and external disks while they
+  are plugged in. A drive is scanned when it is mounted under `/media/<you>` or
+  `/run/media/<you>`, and its entries are dropped when it is unmounted. It is
+  off by default because a large disk can take a long time to scan.
 
 Changing `SEARCH_ROOTS`, `EXCLUDE`, or `INDEX_HIDDEN` rebuilds the index the
 next time the service starts. Applications stay searchable while it rebuilds.

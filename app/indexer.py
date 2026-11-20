@@ -65,6 +65,26 @@ class FileIndexer:
             self.rebuild_requested = True
         self.wake_event.set()
 
+    def add_root(self, root: Path) -> bool:
+        """Start indexing another directory, such as a drive that was just plugged in."""
+        if root in self.roots:
+            return False
+        self.roots = (*self.roots, root)
+        LOGGER.info("Added a search root; %s in total", len(self.roots))
+        self.request_reindex()
+        return True
+
+    def remove_root(self, root: Path) -> bool:
+        """Stop indexing a directory and drop its entries, such as an unplugged drive."""
+        if root not in self.roots:
+            return False
+        self.roots = tuple(item for item in self.roots if item != root)
+        self.database.delete_path(root)
+        LOGGER.info("Removed a search root; %s left", len(self.roots))
+        # Restart the watcher so it lets go of the directory.
+        self.request_reindex()
+        return True
+
     def start(self) -> None:
         self.thread = threading.Thread(target=self._run, name="searchy-indexer", daemon=True)
         self.thread.start()

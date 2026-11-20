@@ -48,6 +48,17 @@ class StatusTests(unittest.TestCase):
         self.assertIn("Live updates:   on", text)
 
 
+class DriveTests(unittest.TestCase):
+    def test_only_the_users_mount_points_count(self) -> None:
+        from app.drives import is_removable_path
+
+        self.assertTrue(is_removable_path(Path("/media/ali/USB STICK"), "ali"))
+        self.assertTrue(is_removable_path(Path("/run/media/ali/backup"), "ali"))
+        for path in ("/media/ali", "/media/other/usb", "/media/ali/usb/sub", "/home/ali", "/mnt/x"):
+            self.assertFalse(is_removable_path(Path(path), "ali"), path)
+        self.assertFalse(is_removable_path(Path("/media/ali/usb"), ""))
+
+
 class ReindexTests(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
@@ -84,6 +95,25 @@ class ReindexTests(unittest.TestCase):
         self.assertTrue(self.wait_for(lambda: not self.database.search("stale", 5)))
         self.assertTrue(self.wait_for(lambda: self.database.count() == 3))
         self.assertEqual(self.database.index_rules(), "rules")
+
+    def test_a_root_can_be_added_and_removed_while_running(self) -> None:
+        drive = self.root.parent / "drive"
+        (drive / "photos").mkdir(parents=True)
+        (drive / "photos/holiday.jpg").write_text("x", encoding="utf-8")
+        self.indexer.start()
+        self.assertTrue(self.wait_for(lambda: self.database.last_completed_at() is not None))
+        self.assertEqual(self.database.search("holiday", 5), [])
+        self.assertTrue(self.indexer.add_root(drive))
+        self.assertFalse(self.indexer.add_root(drive))
+        self.assertTrue(self.wait_for(lambda: len(self.database.search("holiday", 5)) == 1))
+        self.assertTrue(self.indexer.remove_root(drive))
+        self.assertEqual(self.database.search("holiday", 5), [])
+        self.assertFalse(self.indexer.remove_root(drive))
+        # The files that were there before are untouched, also after the next scan.
+        first = self.database.last_completed_at()
+        self.assertTrue(self.wait_for(lambda: self.database.last_completed_at() != first))
+        self.assertEqual(len(self.database.search("a.txt", 5)), 1)
+        self.assertEqual(self.database.search("holiday", 5), [])
 
     def test_reindex_request_runs_a_new_scan(self) -> None:
         self.indexer.start()
