@@ -20,6 +20,7 @@ from .catalog import ApplicationCatalog
 from .database import SearchDatabase
 from .models import SearchResult
 from .ranking import is_indexable, sort_key, tokenize
+from .usage import UsageStore
 
 LOGGER = logging.getLogger(__name__)
 SEARCH_TYPES = ("everything", "apps", "files", "folders")
@@ -31,12 +32,14 @@ class SearchWindow(Adw.ApplicationWindow):
         application: Adw.Application,
         database: SearchDatabase,
         catalog: ApplicationCatalog,
+        usage: UsageStore,
         result_limit: int,
         default_search_type: str,
     ):
         super().__init__(application=application, title="Searchy")
         self.database = database
         self.catalog = catalog
+        self.usage = usage
         self.result_limit = result_limit
         self.results: list[SearchResult] = []
         self.search_generation = 0
@@ -197,7 +200,9 @@ class SearchWindow(Adw.ApplicationWindow):
         if self.sort_enabled.get_active():
             results = self._sort_results(results)
         else:
-            results.sort(key=lambda result: sort_key(result, tokens))
+            results.sort(
+                key=lambda result: sort_key(result, tokens, self.usage.score(result))
+            )
         self.results = results[: self.result_limit]
         for future in self.thumbnail_futures:
             future.cancel()
@@ -350,6 +355,7 @@ class SearchWindow(Adw.ApplicationWindow):
                 Gio.AppInfo.launch_default_for_uri(
                     Gio.File.new_for_path(str(result.path)).get_uri(), None
                 )
+            self.usage.record(result)
             self.set_visible(False)
         except GLib.Error as error:
             LOGGER.warning("Cannot open %s: %s", result.name, error.message)
