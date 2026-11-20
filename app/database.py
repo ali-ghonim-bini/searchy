@@ -9,11 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import SearchResult
-from .ranking import MIN_INDEXED_LENGTH, tokenize
+from .query import Query, parse_query
+from .ranking import MIN_INDEXED_LENGTH
 
 _RESULT_COLUMNS = (
     "entries.path, entries.name, entries.parent, entries.kind, entries.created_at"
 )
+_FTS_JOIN = " JOIN entries_fts ON entries.id = entries_fts.rowid"
 # Sorts hidden and dependency directories after everything else.
 _NOISE_SQL = (
     "(instr(entries.path, '/.') > 0 OR instr(entries.path, '/node_modules/') > 0"
@@ -240,7 +242,7 @@ class SearchDatabase:
 
     def search(
         self,
-        query: str,
+        query: str | Query,
         limit: int,
         kind: str | None = None,
         cancel_event: threading.Event | None = None,
@@ -248,30 +250,30 @@ class SearchDatabase:
         """Match every word of the query, in any order, against names then paths."""
         if kind not in {None, "file", "folder"}:
             raise ValueError("kind must be file, folder, or None")
-        tokens = tokenize(query)
-        indexed = [token for token in tokens if len(token) >= MIN_INDEXED_LENGTH]
-        if not indexed:
+        if isinstance(query, str):
+            query = parse_query(query)
+        if query.kind == "app" or not query.searches_files:
             return []
+        kind = query.kind or kind
         if cancel_event and cancel_event.is_set():
             return []
+        tokens = list(query.tokens)
+        indexed = [token for token in tokens if len(token) >= MIN_INDEXED_LENGTH]
         match = " AND ".join(_fts_phrase(token) for token in indexed)
-        conditions = ["entries_fts MATCH ?"]
-        parameters: list[object] = [match]
-        if kind:
-            conditions.append("entries.kind = ?")
-            parameters.append(kind)
+        conditions, parameters = _filter_conditions(query, kind)
+        if match:
+            conditions.insert(0, "entries_fts MATCH ?")
+            parameters.insert(0, match)
         for token in tokens:
             if len(token) < MIN_INDEXED_LENGTH:
                 conditions.append("lower(entries.name) LIKE ? ESCAPE '\\'")
                 parameters.append("%" + _escape_like(token) + "%")
-        full = " ".join(tokens)
-        parameters.extend(
-            (full, _escape_like(full) + ".%", _escape_like(tokens[0]) + "%", limit)
-        )
+        full = query.text
+        first = tokens[0] if tokens else ""
+        parameters.extend((full, _escape_like(full) + ".%", _escape_like(first) + "%", limit))
         sql = f"""
             SELECT {_RESULT_COLUMNS}
-            FROM entries
-            JOIN entries_fts ON entries.id = entries_fts.rowid
+            FROM entries{_FTS_JOIN if match else ""}
             WHERE {" AND ".join(conditions)}
             ORDER BY CASE
                 WHEN lower(entries.name) = ? THEN 0
@@ -289,13 +291,14 @@ class SearchDatabase:
             try:
                 rows = connection.execute(sql, parameters).fetchall()
                 seen = {row[0] for row in rows}
-                if len(rows) < limit and len(tokens) > 1:
+                if len(rows) < limit and len(tokens) > 1 and indexed:
                     rows.extend(
                         self._search_paths(
-                            connection, tokens, indexed, kind, limit - len(rows), seen
+                            connection, query, indexed, kind, limit - len(rows), seen
                         )
                     )
-                if len(rows) < limit:
+                # Listing a matching folder's contents would ignore the filters.
+                if len(rows) < limit and match and not query.has_file_filters:
                     rows.extend(
                         self._search_folder_paths(
                             connection, match, kind, limit - len(rows), seen
@@ -320,7 +323,7 @@ class SearchDatabase:
     def _search_paths(
         self,
         connection: sqlite3.Connection,
-        tokens: list[str],
+        query: Query,
         indexed: list[str],
         kind: str | None,
         limit: int,
@@ -332,12 +335,10 @@ class SearchDatabase:
         for anchor in sorted(indexed, key=len, reverse=True)[:2]:
             if len(results) >= limit:
                 break
-            conditions = ["entries_fts MATCH ?"]
-            parameters: list[object] = [_fts_phrase(anchor)]
-            if kind:
-                conditions.append("entries.kind = ?")
-                parameters.append(kind)
-            for token in tokens:
+            conditions, parameters = _filter_conditions(query, kind)
+            conditions.insert(0, "entries_fts MATCH ?")
+            parameters.insert(0, _fts_phrase(anchor))
+            for token in query.tokens:
                 if token != anchor:
                     conditions.append("lower(entries.path) LIKE ? ESCAPE '\\'")
                     parameters.append("%" + _escape_like(token) + "%")
@@ -345,8 +346,7 @@ class SearchDatabase:
             rows = connection.execute(
                 f"""
                 SELECT {_RESULT_COLUMNS}
-                FROM entries
-                JOIN entries_fts ON entries.id = entries_fts.rowid
+                FROM entries{_FTS_JOIN}
                 WHERE {" AND ".join(conditions)}
                 ORDER BY {_NOISE_SQL}, length(entries.path)
                 LIMIT ?
@@ -435,6 +435,25 @@ class SearchDatabase:
                 "SELECT value FROM metadata WHERE key = 'last_completed_at'"
             ).fetchone()
         return row is not None and time.time() - float(row[0]) < interval
+
+
+def _filter_conditions(query: Query, kind: str | None) -> tuple[list[str], list[object]]:
+    conditions: list[str] = []
+    parameters: list[object] = []
+    if kind:
+        conditions.append("entries.kind = ?")
+        parameters.append(kind)
+    if query.extensions:
+        clause = " OR ".join(
+            "lower(entries.name) LIKE ? ESCAPE '\\'" for _ in query.extensions
+        )
+        conditions.append(f"({clause})")
+        parameters.extend("%." + _escape_like(item) for item in query.extensions)
+    for folder in query.folders:
+        # Matches any parent folder whose name starts with the value.
+        conditions.append("lower(entries.parent) LIKE ? ESCAPE '\\'")
+        parameters.append("%/" + _escape_like(folder) + "%")
+    return conditions, parameters
 
 
 def _fts_phrase(token: str) -> str:
