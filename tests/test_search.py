@@ -70,6 +70,17 @@ class QueryTests(unittest.TestCase):
         self.assertFalse(parse_query("ext:").searches_files)
         self.assertEqual(parse_query("12:30").tokens, ("12:30",))
 
+    def test_quotes_group_words(self) -> None:
+        query = parse_query('in:"My Documents" "annual report" ext:pdf')
+        self.assertEqual(query.folders, ("my documents",))
+        self.assertEqual(query.tokens, ("annual report",))
+        self.assertEqual(query.extensions, ("pdf",))
+
+    def test_unfinished_quote_is_tolerated(self) -> None:
+        self.assertEqual(parse_query('"annual rep').tokens, ("annual rep",))
+        self.assertEqual(parse_query('in:"my doc').folders, ("my doc",))
+        self.assertEqual(parse_query('""').tokens, ())
+
     def test_filter_alone_can_search_files(self) -> None:
         self.assertTrue(parse_query("ext:pdf").searches_files)
         self.assertFalse(parse_query("kind:file ab").searches_files)
@@ -132,6 +143,19 @@ class DatabaseSearchTests(unittest.TestCase):
 
     def test_filter_does_not_list_unfiltered_folder_contents(self) -> None:
         self.assertEqual(self.names("invoices ext:jpg"), [])
+
+    def test_quoted_phrase_must_be_contiguous(self) -> None:
+        self.assertEqual(
+            self.names('"report 2024"'), ["/home/u/Documents/Annual Report 2024.pdf"]
+        )
+        self.assertEqual(self.names('"2024 report"'), [])
+
+    def test_folder_filter_with_spaces(self) -> None:
+        self.database.upsert_many(
+            [IndexedPath(Path("/home/u/My Documents/plan.txt"), "file", None, 1.0)], 1
+        )
+        self.assertEqual(self.names('plan in:"my documents"'), ["/home/u/My Documents/plan.txt"])
+        self.assertEqual(self.names('plan in:"my pictures"'), [])
 
     def test_kind_filter_and_special_characters(self) -> None:
         self.assertEqual(self.names("invoices", "folder"), ["/home/u/Documents/invoices"])

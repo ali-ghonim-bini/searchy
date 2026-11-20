@@ -161,8 +161,11 @@ Type filters in the search box alongside, or instead of, ordinary words:
 | `kind:` | Only `app`, `file`, or `folder`; overrides the dropdown | `projects kind:folder` |
 
 Filters combine: `ext:pdf in:invoices 2024`. A filter on its own is enough to
-search files, so `ext:iso` lists every ISO image. Folder names with spaces are
-not supported in `in:`; use one word of the name.
+search files, so `ext:iso` lists every ISO image. Put quotes around
+a folder name with spaces: `in:"My Documents"`.
+
+Quotes also make an exact phrase: `"annual report"` only finds names with
+those words next to each other, in that order.
 
 ## The `searchy` command
 
