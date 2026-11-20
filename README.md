@@ -210,7 +210,3 @@ Remove the index too:
 ```bash
 python3 -m unittest discover -v
 ```
-
-The window tests need a graphical session and are skipped without one. GitHub
-runs the whole suite on every pull request under a virtual display
-(`.github/workflows/tests.yml`).
