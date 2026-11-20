@@ -53,6 +53,7 @@ EXCLUDE=node_modules:__pycache__:site-packages:venv:~/snap
 INDEX_HIDDEN=false
 REMEMBER_USAGE=true
 HIDE_ON_FOCUS_LOSS=true
+WEB_SEARCH_URL='https://duckduckgo.com/?q={query}'
 LOG_LEVEL=INFO
 ```
 
@@ -115,6 +116,20 @@ opened a month ago counts half as much as one opened today.
 The history is stored in `~/.local/state/searchy/usage.sqlite3`, readable only
 by you, and survives index rebuilds. Set `REMEMBER_USAGE=false` to turn it off;
 delete the file to forget it.
+
+### More than files
+
+- **Calculator.** Type arithmetic such as `(1200 - 350) * 1.14` or `sqrt(2)`
+  and the answer appears as the first result; Enter copies it. `+ - * / // %`,
+  `^` or `**` for powers, parentheses, `pi`, `e`, and `sqrt`, `abs`, `round`,
+  `sin`, `cos`, `tan`, `log`, `log10` are supported.
+- **Recent files.** An empty search box lists the applications you use most,
+  then the files your desktop recorded as recently used, then other
+  applications.
+- **Web search.** When nothing matches, the only result offers to search the
+  web for your words in the default browser. Nothing is sent anywhere unless
+  you open that result. `WEB_SEARCH_URL` sets the search engine; it must
+  contain `{query}`. Leave it empty to turn the offer off.
 
 ### Window
 

@@ -78,6 +78,50 @@ class KeyboardTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
+class ExtraResultTests(unittest.TestCase):
+    def setUp(self) -> None:
+        Adw.init()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.window = SearchWindow(
+            None,
+            SearchDatabase(Path(directory.name) / "index.sqlite3"),
+            ApplicationCatalog(),
+            UsageStore(None),
+            50,
+            "everything",
+            web_search_url="https://duckduckgo.com/?q={query}",
+        )
+        self.addCleanup(self.window.shutdown)
+        self.window._recent_files = lambda: [file_result("recent.txt")]
+        self.copied: list[str] = []
+        self.window._copy_text = self.copied.append
+        self.window.search_generation = 1
+
+    def shown(self, text: str, results: list[SearchResult]) -> list[SearchResult]:
+        self.window.search.set_text(text)
+        self.window._apply_results(self.window.search_generation, results)
+        return self.window.results
+
+    def test_calculation_is_the_first_result_and_enter_copies_it(self) -> None:
+        results = self.shown("6*7", [file_result("6x7.txt")])
+        self.assertEqual([result.kind for result in results], ["calc", "file"])
+        self.window._open_result(results[0])
+        self.assertEqual(self.copied, ["42"])
+
+    def test_web_search_is_offered_only_when_nothing_matches(self) -> None:
+        self.assertEqual([r.kind for r in self.shown("zzqx", [])], ["web"])
+        self.assertEqual([r.kind for r in self.shown("file", [file_result("file.txt")])], ["file"])
+        self.assertEqual(self.shown("", []), [])
+
+    def test_empty_box_lists_recent_files_before_unused_apps(self) -> None:
+        app = SearchResult("app", "Zed", "", None)
+        results = self.window._idle_results("everything", [app])
+        self.assertEqual([result.name for result in results], ["recent.txt", "Zed"])
+        self.assertEqual(self.window._idle_results("folders", [app]), [])
+
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
 class FocusTests(unittest.TestCase):
     def make_window(self, hide_on_focus_loss: bool) -> SearchWindow:
         Adw.init()

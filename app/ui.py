@@ -18,6 +18,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 
 from .catalog import ApplicationCatalog
 from .database import SearchDatabase
+from .extras import calculator_result, recent_files, web_result
 from .models import SearchResult
 from .query import parse_query
 from .ranking import sort_key
@@ -27,6 +28,7 @@ LOGGER = logging.getLogger(__name__)
 SEARCH_TYPES = ("everything", "apps", "files", "folders")
 # Alt+1 to Alt+9 open the first results directly.
 QUICK_OPEN_COUNT = 9
+RECENT_FILE_COUNT = 8
 _DIGIT_KEYS = {
     getattr(Gdk, f"{prefix}{digit}"): digit - 1
     for prefix in ("KEY_", "KEY_KP_")
@@ -44,6 +46,7 @@ class SearchWindow(Adw.ApplicationWindow):
         result_limit: int,
         default_search_type: str,
         hide_on_focus_loss: bool = True,
+        web_search_url: str = "",
     ):
         super().__init__(application=application, title="Searchy")
         self.database = database
@@ -62,6 +65,7 @@ class SearchWindow(Adw.ApplicationWindow):
         self.thumbnail_futures = []
         self.creation_sort_available = False
         self.hide_on_focus_loss = hide_on_focus_loss
+        self.web_search_url = web_search_url
         self.was_active = False
         self.dialog_open = False
         self.set_default_size(760, 560)
@@ -181,6 +185,10 @@ class SearchWindow(Adw.ApplicationWindow):
             if mode in {"everything", "apps"} and not query.has_file_filters
             else []
         )
+        if not query.tokens and not query.has_file_filters:
+            self.search_hint = ""
+            self._apply_results(generation, self._idle_results(mode, app_results), True)
+            return
         if mode == "apps":
             self.search_hint = ""
             self._apply_results(generation, app_results)
@@ -218,16 +226,47 @@ class SearchWindow(Adw.ApplicationWindow):
 
         future.add_done_callback(completed)
 
-    def _apply_results(self, generation: int, results: list[SearchResult]) -> bool:
+    def _idle_results(self, mode: str, apps: list[SearchResult]) -> list[SearchResult]:
+        """What an empty search box shows: used apps, recent files, then other apps."""
+        recent = self._recent_files() if mode in {"everything", "files"} else []
+        if mode == "files":
+            return recent
+        if mode == "folders":
+            return []
+        apps = sorted(apps, key=lambda result: sort_key(result, [], self.usage.score(result)))
+        used = [result for result in apps if self.usage.score(result) > 0]
+        return used + recent + apps[len(used) :]
+
+    def _recent_files(self) -> list[SearchResult]:
+        try:
+            return recent_files(RECENT_FILE_COUNT)
+        except GLib.Error:
+            LOGGER.warning("Cannot read recently used files", exc_info=True)
+            return []
+
+    def _apply_results(
+        self, generation: int, results: list[SearchResult], presorted: bool = False
+    ) -> bool:
         if generation != self.search_generation:
             return GLib.SOURCE_REMOVE
-        tokens = list(parse_query(self.search.get_text()).tokens)
-        if self.sort_enabled.get_active():
+        text = self.search.get_text()
+        tokens = list(parse_query(text).tokens)
+        if presorted:
+            results = list(results)
+        elif self.sort_enabled.get_active():
             results = self._sort_results(results)
         else:
             results.sort(
                 key=lambda result: sort_key(result, tokens, self.usage.score(result))
             )
+        answer = calculator_result(text)
+        if answer:
+            results.insert(0, answer)
+        elif not results and tokens:
+            # Nothing matched: offer to look the words up instead.
+            fallback = web_result(" ".join(tokens), self.web_search_url)
+            if fallback:
+                results.append(fallback)
         self.results = results[: self.result_limit]
         for future in self.thumbnail_futures:
             future.cancel()
@@ -383,7 +422,13 @@ class SearchWindow(Adw.ApplicationWindow):
         if popover:
             popover.popdown()
         try:
-            if result.kind == "app":
+            if result.kind == "calc":
+                self._copy_text(result.payload)
+                self.status.set_text(f"Copied {result.payload}")
+                return
+            if result.kind == "web":
+                Gio.AppInfo.launch_default_for_uri(result.payload, None)
+            elif result.kind == "app":
                 result.payload.launch([], None)
             elif result.path:
                 Gio.AppInfo.launch_default_for_uri(
@@ -575,6 +620,10 @@ def _icon_name(kind: str) -> str:
         return "folder-symbolic"
     if kind == "app":
         return "application-x-executable-symbolic"
+    if kind == "calc":
+        return "accessories-calculator-symbolic"
+    if kind == "web":
+        return "web-browser-symbolic"
     return "text-x-generic-symbolic"
 
 
