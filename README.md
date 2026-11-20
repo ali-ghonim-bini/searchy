@@ -182,6 +182,21 @@ only the first 4 kB of a text file. Set `SHOW_PREVIEW=false` to hide the pane.
 | Menu or Shift+F10 | Open the right-click menu, which also has Copy Path |
 | Escape | Hide Searchy |
 
+### Searching inside files
+
+`content:` looks inside files instead of at their names. It runs
+[ripgrep](https://github.com/BurntSushi/ripgrep) over the search roots when you
+ask, so the index stays small and nothing about file contents is stored. Each
+result shows the first matching line.
+
+- It skips what the index skips (`EXCLUDE`, hidden folders unless
+  `INDEX_HIDDEN=true`), plus binary files, files over 2 MB, and anything your
+  `.gitignore` files ignore.
+- Combine it with other filters: `content:todo ext:py in:searchy`.
+- It stops after `RESULT_LIMIT` matches or 15 seconds, whichever comes first.
+- It needs the `rg` command (`sudo apt install ripgrep`). Without it,
+  `content:` finds nothing and the journal says why.
+
 ### Actions
 
 Right-click a file or folder (or press Menu) for more than opening it:
@@ -209,6 +224,7 @@ Type filters in the search box alongside, or instead of, ordinary words:
 | `kind:` | Only `app`, `file`, or `folder`; overrides the dropdown | `projects kind:folder` |
 | `size:` | Files at least (`>`, or no sign) or at most (`<`) a size; units `kb`, `mb`, `gb` | `size:>100mb`, `size:<10kb` |
 | `modified:` | Changed `today`, `yesterday`, within (`<`) or longer ago than (`>`) a period; units `h`, `d`, `w`, `m`, `y` | `modified:<7d`, `modified:>1y` |
+| `content:` | Files whose text contains the value; quote a phrase | `content:invoice`, `content:"due date" ext:md` |
 
 Filters combine: `ext:pdf in:invoices 2024`. A filter on its own is enough to
 search files, so `ext:iso` lists every ISO image. `size:>1gb` lists your

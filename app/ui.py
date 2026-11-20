@@ -63,6 +63,7 @@ class SearchWindow(Adw.ApplicationWindow):
         hide_on_focus_loss: bool = True,
         web_search_url: str = "",
         show_preview: bool = True,
+        content_search=None,
     ):
         super().__init__(application=application, title="Searchy")
         self.database = database
@@ -87,6 +88,7 @@ class SearchWindow(Adw.ApplicationWindow):
         self.focus_check_id = 0
         self.highlight_tokens: list[str] = []
         self.show_preview = show_preview
+        self.content_search = content_search
         self.preview_generation = 0
         self.set_default_size(1000 if show_preview else 760, 560)
         self.connect("close-request", self._on_close_request)
@@ -109,7 +111,8 @@ class SearchWindow(Adw.ApplicationWindow):
             placeholder_text="Search applications, files, and folders", hexpand=True
         )
         self.search.set_tooltip_text(
-            "Filters: ext:pdf  in:Documents  kind:folder  size:>100mb  modified:<7d"
+            "Filters: ext:pdf  in:Documents  kind:folder  size:>100mb  modified:<7d  "
+            "content:word"
         )
         self.search.add_css_class("searchy-entry")
         self.search.connect("search-changed", self._on_search_changed)
@@ -307,9 +310,19 @@ class SearchWindow(Adw.ApplicationWindow):
             return
         self.search_hint = ""
         kind = "file" if mode == "files" else "folder" if mode == "folders" else None
-        future = self.executor.submit(
-            self.database.search, query, self.result_limit, kind, cancel_event
-        )
+        if query.content is not None:
+            if self.content_search is None or mode == "folders" or len(query.content) < 3:
+                self.search_hint = "content: needs at least 3 characters and searches files only"
+                self._apply_results(generation, [])
+                return
+            self.status.set_text("Searching inside files...")
+            future = self.executor.submit(
+                self.content_search, query, self.result_limit, cancel_event
+            )
+        else:
+            future = self.executor.submit(
+                self.database.search, query, self.result_limit, kind, cancel_event
+            )
 
         def completed(task) -> None:
             try:

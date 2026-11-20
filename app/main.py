@@ -14,6 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib
 
 from .catalog import ApplicationCatalog
 from .config import Config
+from .content import search_content
 from .database import INDEX_VERSION, SearchDatabase
 from .excludes import PathFilter
 from .indexer import FileIndexer
@@ -99,6 +100,14 @@ class SearchyApplication(Adw.Application):
             self.config.hide_on_focus_loss,
             self.config.web_search_url,
             self.config.show_preview,
+            lambda query, limit, cancel_event: search_content(
+                query,
+                self.config.search_roots,
+                path_filter.excluded_names,
+                self.config.index_hidden,
+                limit,
+                cancel_event,
+            ),
         )
         self.indexer = FileIndexer(
             self.database,

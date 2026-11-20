@@ -38,6 +38,7 @@ class Query:
     max_size: int | None = None
     modified_after: float | None = None
     modified_before: float | None = None
+    content: str | None = None
 
     @property
     def text(self) -> str:
@@ -49,6 +50,7 @@ class Query:
             self.extensions
             or self.folders
             or self.has_size_filter
+            or self.content is not None
             or self.modified_after is not None
             or self.modified_before is not None
         )
@@ -68,6 +70,7 @@ class Query:
 def parse_query(text: str, now: float | None = None) -> Query:
     now = time.time() if now is None else now
     limits: dict[str, float] = {}
+    content = None
     tokens: list[str] = []
     extensions: list[str] = []
     folders: list[str] = []
@@ -86,6 +89,8 @@ def parse_query(text: str, now: float | None = None) -> Query:
                 folders.append(value.strip("/"))
         elif separator and name in {"kind", "type"} and (not value or value in _KINDS):
             kind = _KINDS.get(value, kind)
+        elif separator and name == "content":
+            content = value or content
         elif separator and name == "size" and (not value or _size_limit(value)):
             limits.update(_size_limit(value) or {})
         elif separator and name == "modified" and (not value or _modified_limit(value, now)):
@@ -101,6 +106,7 @@ def parse_query(text: str, now: float | None = None) -> Query:
         max_size=int(limits["max_size"]) if "max_size" in limits else None,
         modified_after=limits.get("modified_after"),
         modified_before=limits.get("modified_before"),
+        content=content,
     )
 
 

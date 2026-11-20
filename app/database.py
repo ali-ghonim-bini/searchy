@@ -275,7 +275,8 @@ class SearchDatabase:
             raise ValueError("kind must be file, folder, or None")
         if isinstance(query, str):
             query = parse_query(query)
-        if query.kind == "app" or not query.searches_files:
+        # Text inside files is not indexed; app.content searches it on demand.
+        if query.kind == "app" or not query.searches_files or query.content is not None:
             return []
         kind = query.kind or kind
         if cancel_event and cancel_event.is_set():
