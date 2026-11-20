@@ -115,6 +115,18 @@ The history is stored in `~/.local/state/searchy/usage.sqlite3`, readable only
 by you, and survives index rebuilds. Set `REMEMBER_USAGE=false` to turn it off;
 delete the file to forget it.
 
+### Keyboard
+
+| Keys | Action |
+|---|---|
+| Up / Down | Move through results |
+| Enter | Open the selected result |
+| Ctrl+Enter | Show the selected result in the file manager |
+| Alt+1 … Alt+9 | Open that result directly; each row shows its number |
+| Ctrl+Shift+C | Copy the selected result's path |
+| Menu or Shift+F10 | Open the right-click menu, which also has Copy Path |
+| Escape | Hide Searchy |
+
 ### Filters
 
 Type filters in the search box alongside, or instead of, ordinary words:

@@ -25,6 +25,13 @@ from .usage import UsageStore
 
 LOGGER = logging.getLogger(__name__)
 SEARCH_TYPES = ("everything", "apps", "files", "folders")
+# Alt+1 to Alt+9 open the first results directly.
+QUICK_OPEN_COUNT = 9
+_DIGIT_KEYS = {
+    getattr(Gdk, f"{prefix}{digit}"): digit - 1
+    for prefix in ("KEY_", "KEY_KP_")
+    for digit in range(1, QUICK_OPEN_COUNT + 1)
+}
 
 
 class SearchWindow(Adw.ApplicationWindow):
@@ -219,8 +226,8 @@ class SearchWindow(Adw.ApplicationWindow):
         self.thumbnail_futures.clear()
         while child := self.list_box.get_first_child():
             self.list_box.remove(child)
-        for result in self.results:
-            self.list_box.append(self._make_row(result))
+        for index, result in enumerate(self.results):
+            self.list_box.append(self._make_row(result, index))
         first = self.list_box.get_row_at_index(0)
         if first:
             self.list_box.select_row(first)
@@ -252,7 +259,7 @@ class SearchWindow(Adw.ApplicationWindow):
             results, key=lambda result: result.name.casefold(), reverse=descending
         )
 
-    def _make_row(self, result: SearchResult) -> Gtk.ListBoxRow:
+    def _make_row(self, result: SearchResult, index: int) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
         row.result = result
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -304,6 +311,11 @@ class SearchWindow(Adw.ApplicationWindow):
         type_label = Gtk.Label(label=result.kind.title())
         type_label.add_css_class("dim-label")
         box.append(type_label)
+        if index < QUICK_OPEN_COUNT:
+            shortcut = Gtk.Label(label=f"Alt+{index + 1}")
+            shortcut.add_css_class("dim-label")
+            shortcut.add_css_class("caption")
+            box.append(shortcut)
         row.set_child(box)
         click = Gtk.GestureClick(button=3)
         click.connect("pressed", self._on_context_click, row)
@@ -339,6 +351,10 @@ class SearchWindow(Adw.ApplicationWindow):
             "clicked", lambda _button: self._reveal_result(row.result, popover)
         )
         menu.append(source_button)
+        copy_button = Gtk.Button(label="Copy Path")
+        copy_button.set_sensitive(row.result.source_path is not None)
+        copy_button.connect("clicked", lambda _button: self._copy_path(row.result, popover))
+        menu.append(copy_button)
         if row.result.kind in {"file", "folder"} and row.result.path is not None:
             trash_button = Gtk.Button(label="Move to Trash")
             trash_button.add_css_class("destructive-action")
@@ -370,6 +386,18 @@ class SearchWindow(Adw.ApplicationWindow):
         except GLib.Error as error:
             LOGGER.warning("Cannot open %s: %s", result.name, error.message)
             self.status.set_text(f"Could not open {result.name}")
+
+    def _copy_path(self, result: SearchResult, popover: Gtk.Popover | None = None) -> None:
+        if popover:
+            popover.popdown()
+        if result.source_path is None:
+            self.status.set_text(f"{result.name} has no path to copy")
+            return
+        self._copy_text(str(result.source_path))
+        self.status.set_text(f"Copied path of {result.name}")
+
+    def _copy_text(self, text: str) -> None:
+        self.get_clipboard().set(text)
 
     def _confirm_trash(self, result: SearchResult, popover: Gtk.Popover) -> None:
         popover.popdown()
@@ -465,8 +493,26 @@ class SearchWindow(Adw.ApplicationWindow):
         if keyval == Gdk.KEY_Escape:
             self.set_visible(False)
             return True
+        control = bool(state & Gdk.ModifierType.CONTROL_MASK)
+        shift = bool(state & Gdk.ModifierType.SHIFT_MASK)
+        selected_row = self.list_box.get_selected_row()
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-            self._activate_selected()
+            if control and selected_row:
+                # Ctrl+Enter shows the result in the file manager instead of opening it.
+                self._reveal_result(selected_row.result)
+                self.set_visible(False)
+            else:
+                self._activate_selected()
+            return True
+        # Plain Ctrl+C stays with the search box for copying typed text.
+        if control and shift and keyval in (Gdk.KEY_c, Gdk.KEY_C):
+            if selected_row:
+                self._copy_path(selected_row.result)
+            return True
+        if state & Gdk.ModifierType.ALT_MASK and keyval in _DIGIT_KEYS:
+            row = self.list_box.get_row_at_index(_DIGIT_KEYS[keyval])
+            if row:
+                self._open_result(row.result)
             return True
         if keyval in (Gdk.KEY_Down, Gdk.KEY_Up):
             selected = self.list_box.get_selected_row()
