@@ -8,7 +8,7 @@ StartLimitIntervalSec=120
 StartLimitBurst=10
 
 [Service]
-# install.sh replaces @PROJECT_DIR@ with the project location.
+# install.sh fills in the project location below.
 Type=dbus
 BusName=io.github.alighonimbini.Searchy
 WorkingDirectory=@PROJECT_DIR@
