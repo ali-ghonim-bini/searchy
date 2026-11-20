@@ -119,6 +119,27 @@ class SearchDatabase:
                     """
                 )
 
+    def reset(self) -> None:
+        """Discard the index file; deleting most rows one by one is far slower."""
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(self.path) + suffix).unlink(missing_ok=True)
+        self._initialize()
+
+    def index_rules(self) -> str | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM metadata WHERE key = 'index_rules'"
+            ).fetchone()
+        return row[0] if row else None
+
+    def set_index_rules(self, rules: str) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                "INSERT INTO metadata(key, value) VALUES ('index_rules', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (rules,),
+            )
+
     def next_generation(self) -> int:
         with self._connection() as connection:
             row = connection.execute(
@@ -414,15 +435,6 @@ class SearchDatabase:
                 "SELECT value FROM metadata WHERE key = 'last_completed_at'"
             ).fetchone()
         return row is not None and time.time() - float(row[0]) < interval
-
-    def mark_existing_index_complete(self) -> None:
-        with self._connection() as connection:
-            connection.execute("DELETE FROM scan_seen")
-            connection.execute(
-                "INSERT INTO metadata(key, value) VALUES ('last_completed_at', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (str(time.time()),),
-            )
 
 
 def _fts_phrase(token: str) -> str:

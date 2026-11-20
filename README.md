@@ -49,8 +49,31 @@ NATIVE_SHORTCUT='<Alt>f'
 DEFAULT_SEARCH_TYPE=everything
 RESULT_LIMIT=100
 INDEX_INTERVAL_SECONDS=3600
+EXCLUDE=node_modules:__pycache__:site-packages:venv:~/snap
+INDEX_HIDDEN=false
 LOG_LEVEL=INFO
 ```
+
+### What gets indexed
+
+Searchy skips the directories that hold most files but are rarely searched:
+
+- `EXCLUDE` is a colon-separated list. An entry without a slash matches any
+  directory with that name and may use wildcards (`build`, `*.egg-info`). An
+  entry with a slash names one directory (`~/snap`, `/mnt/backup`).
+- `INDEX_HIDDEN=false` skips hidden directories such as `~/.cache`. Hidden
+  files inside indexed directories are still found. Set it to `true` to index
+  everything.
+- A directory listed in `SEARCH_ROOTS` is always indexed, even when hidden, so
+  `SEARCH_ROOTS=~:~/.config` adds one hidden directory back.
+
+Changing `SEARCH_ROOTS`, `EXCLUDE`, or `INDEX_HIDDEN` rebuilds the index the
+next time the service starts. Applications stay searchable while it rebuilds.
+
+A smaller index also keeps the folder count under the kernel's inotify watch
+limit (`fs.inotify.max_user_watches`), so new and renamed files appear within
+moments. Above that limit Searchy only notices changes at each
+`INDEX_INTERVAL_SECONDS` rescan.
 
 The shortcut uses GNOME accelerator syntax. The index is stored at
 `~/.local/state/searchy/index.sqlite3` by default. Directory symlinks are listed
