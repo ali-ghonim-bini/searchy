@@ -144,6 +144,16 @@ delete the file to forget it.
   `shut down`. Lock and Suspend act at once; Log Out, Restart and Shut Down
   ask for confirmation first, with Cancel as the default.
 
+### Emoji and symbols
+
+Start with a colon to find a character by name: `:smile`, `:heart`,
+`:arrow right`, `:degree`, `:euro`. Enter copies it and hides Searchy so you
+can paste it where you were. A few everyday words are understood too, such as
+`:lol`, `:thumbsup`, `:tick` and `:dash`.
+
+The names come from the Unicode data shipped with Python, so nothing is
+downloaded and there is no extra file to install.
+
 ### Window
 
 Searchy opens as a launcher panel without a title bar. Drag any empty area to
