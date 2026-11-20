@@ -134,6 +134,16 @@ delete the file to forget it.
   you open that result. `WEB_SEARCH_URL` sets the search engine; it must
   contain `{query}`. Leave it empty to turn the offer off.
 
+### Commands
+
+- **Shell commands.** Start with `>` to run a command: `> code ~/project`.
+  The first row runs it in the background from your home folder; the second
+  opens a terminal, runs it there, and keeps the terminal open so you can read
+  the output. Nothing runs until you press Enter on a row.
+- **System actions.** Type `lock`, `sleep`, `log out`, `restart` or
+  `shut down`. Lock and Suspend act at once; Log Out, Restart and Shut Down
+  ask for confirmation first, with Cancel as the default.
+
 ### Window
 
 Searchy opens as a launcher panel without a title bar. Drag any empty area to

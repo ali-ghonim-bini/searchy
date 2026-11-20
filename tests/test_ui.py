@@ -230,6 +230,60 @@ class ResultActionTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
+class CommandTests(unittest.TestCase):
+    def setUp(self) -> None:
+        Adw.init()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.window = SearchWindow(
+            None,
+            SearchDatabase(Path(directory.name) / "index.sqlite3"),
+            ApplicationCatalog(),
+            UsageStore(None),
+            50,
+            "everything",
+            web_search_url="https://duckduckgo.com/?q={query}",
+        )
+        self.addCleanup(self.window.shutdown)
+        # Nothing here may really run a command, lock the screen or power off.
+        self.spawned: list[list[str]] = []
+        self.window._spawn = lambda command, directory: self.spawned.append(command)
+        self.presented: list[str] = []
+        self.window._run_system_command = self.record_system
+        self.hidden = False
+        self.window.set_visible = lambda visible: setattr(self, "hidden", not visible)
+
+    def record_system(self, command) -> None:
+        self.presented.append(command.name)
+
+    def search(self, text: str) -> list[SearchResult]:
+        self.window.search.set_text(text)
+        self.window._begin_search()
+        return self.window.results
+
+    def test_shell_prefix_offers_to_run_and_runs_only_on_enter(self) -> None:
+        results = self.search("> echo hi")
+        self.assertEqual(results[0].payload, ["sh", "-c", "echo hi"])
+        self.assertTrue(all(result.kind == "command" for result in results))
+        self.assertEqual(self.spawned, [])
+        self.window._open_result(results[0])
+        self.assertEqual(self.spawned, [["sh", "-c", "echo hi"]])
+        self.assertTrue(self.hidden)
+
+    def test_bare_prefix_offers_nothing_not_even_a_web_search(self) -> None:
+        self.assertEqual(self.search(">"), [])
+        self.assertEqual(self.search(">   "), [])
+
+    def test_system_actions_are_listed_and_handed_to_the_confirming_step(self) -> None:
+        # The Apps filter answers at once; file results arrive from a worker thread.
+        self.window.search_type.set_selected(1)
+        results = [r for r in self.search("restart") if r.kind == "system"]
+        self.assertEqual([r.name for r in results], ["Restart"])
+        self.window._open_result(results[0])
+        self.assertEqual((self.presented, self.spawned), (["Restart"], []))
+
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
 class FocusTests(unittest.TestCase):
     def make_window(self, hide_on_focus_loss: bool) -> SearchWindow:
         Adw.init()
