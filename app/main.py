@@ -18,6 +18,7 @@ from .database import SearchDatabase
 from .excludes import PathFilter
 from .indexer import FileIndexer
 from .ui import SearchWindow
+from .usage import UsageStore
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -77,10 +78,16 @@ class SearchyApplication(Adw.Application):
             self.database.reset()
             self.database.set_index_rules(rules)
         self.catalog = ApplicationCatalog()
+        usage = UsageStore(
+            self.config.database_path.parent / "usage.sqlite3"
+            if self.config.remember_usage
+            else None
+        )
         self.window = SearchWindow(
             self,
             self.database,
             self.catalog,
+            usage,
             self.config.result_limit,
             self.config.default_search_type,
         )

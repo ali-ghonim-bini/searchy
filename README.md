@@ -51,6 +51,7 @@ RESULT_LIMIT=100
 INDEX_INTERVAL_SECONDS=3600
 EXCLUDE=node_modules:__pycache__:site-packages:venv:~/snap
 INDEX_HIDDEN=false
+REMEMBER_USAGE=true
 LOG_LEVEL=INFO
 ```
 
@@ -102,6 +103,17 @@ Words match in any order, so `2024 report` finds `Annual Report 2024.pdf`. A
 word may also match a parent folder: `invoices march` finds `march.pdf` inside
 `invoices/`. Applications also match by keyword (`browser`), initials (`vsc`),
 and small typos. Hidden and dependency directories rank below other matches.
+
+### Learning from use
+
+Searchy remembers which results you open and ranks them first among equally
+good matches, so a frequently used application comes up after a letter or two.
+With an empty search box, applications are listed most used first. An item
+opened a month ago counts half as much as one opened today.
+
+The history is stored in `~/.local/state/searchy/usage.sqlite3`, readable only
+by you, and survives index rebuilds. Set `REMEMBER_USAGE=false` to turn it off;
+delete the file to forget it.
 
 ## Logs
 

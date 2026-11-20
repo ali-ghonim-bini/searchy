@@ -47,10 +47,14 @@ def is_noise(path: str) -> bool:
     return any(part in path for part in _NOISE_PARTS)
 
 
-def sort_key(result: SearchResult, tokens: list[str]) -> tuple:
+def sort_key(result: SearchResult, tokens: list[str], usage: float = 0.0) -> tuple:
+    """Order by match quality, then by how often the result has been opened."""
     name = result.name.casefold()
+    if not tokens:
+        return (0, -usage, 0, False, 0, name)
     return (
         name_tier(result.name, tokens),
+        -usage,
         0 if result.kind == "app" else 1,
         is_noise(str(result.path)) if result.path else False,
         len(name),
