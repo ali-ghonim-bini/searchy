@@ -59,6 +59,38 @@ def match_spans(name: str, tokens: list[str]) -> list[tuple[int, int]]:
     return merged
 
 
+def within_one_edit(first: str, second: str) -> bool:
+    """True when one insertion, deletion, substitution or swap turns one into the other."""
+    if first == second:
+        return True
+    if abs(len(first) - len(second)) > 1:
+        return False
+    if len(first) > len(second):
+        first, second = second, first
+    start = 0
+    while start < len(first) and first[start] == second[start]:
+        start += 1
+    if len(first) == len(second):
+        if first[start + 1 :] == second[start + 1 :]:
+            return True
+        return (
+            start + 1 < len(first)
+            and first[start] == second[start + 1]
+            and first[start + 1] == second[start]
+            and first[start + 2 :] == second[start + 2 :]
+        )
+    return first[start:] == second[start + 1 :]
+
+
+def fuzzy_contains(text: str, token: str) -> bool:
+    """Whether some stretch of `text` is `token` with at most one typing mistake."""
+    for length in (len(token), len(token) - 1, len(token) + 1):
+        for start in range(len(text) - length + 1):
+            if within_one_edit(text[start : start + length], token):
+                return True
+    return False
+
+
 def is_noise(path: str) -> bool:
     """Hidden and dependency directories are rarely what a search is looking for."""
     return any(part in path for part in _NOISE_PARTS)

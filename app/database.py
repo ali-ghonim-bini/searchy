@@ -10,12 +10,15 @@ from pathlib import Path
 
 from .models import SearchResult
 from .query import Query, parse_query
-from .ranking import MIN_INDEXED_LENGTH
+from .ranking import MIN_INDEXED_LENGTH, fuzzy_contains
 
 _RESULT_COLUMNS = (
     "entries.path, entries.name, entries.parent, entries.kind, entries.created_at,"
     " entries.size, entries.modified_at"
 )
+# Shorter words have too few trigrams left after a typo to be found reliably.
+FUZZY_MIN_LENGTH = 5
+FUZZY_CANDIDATES = 2000
 # Bump when stored fields change, so existing indexes are rebuilt with them.
 INDEX_VERSION = 2
 _FTS_JOIN = " JOIN entries_fts ON entries.id = entries_fts.rowid"
@@ -324,6 +327,8 @@ class SearchDatabase:
                             connection, match, kind, limit - len(rows), seen
                         )
                     )
+                if not rows:
+                    rows.extend(self._search_fuzzy(connection, query, kind, limit))
             except sqlite3.OperationalError as error:
                 if cancel_event and cancel_event.is_set() and "interrupted" in str(error):
                     return []
@@ -382,6 +387,42 @@ class SearchDatabase:
                     seen.add(row[0])
                     results.append(row)
         return results
+
+    def _search_fuzzy(
+        self, connection: sqlite3.Connection, query: Query, kind: str | None, limit: int
+    ) -> list[tuple]:
+        """Last resort when nothing matched: allow one typing mistake per long word."""
+        long_tokens = [token for token in query.tokens if len(token) >= FUZZY_MIN_LENGTH]
+        if not long_tokens:
+            return []
+        anchor = max(long_tokens, key=len)
+        # A typo spoils at most a few of a word's trigrams; the rest still find it.
+        trigrams = {anchor[index : index + 3] for index in range(len(anchor) - 2)}
+        conditions, parameters = _filter_conditions(query, kind)
+        conditions.insert(0, "entries_fts MATCH ?")
+        parameters.insert(0, " OR ".join(_fts_phrase(item) for item in sorted(trigrams)))
+        parameters.append(FUZZY_CANDIDATES)
+        candidates = connection.execute(
+            f"""
+            SELECT {_RESULT_COLUMNS}
+            FROM entries{_FTS_JOIN}
+            WHERE {" AND ".join(conditions)}
+            ORDER BY entries_fts.rank
+            LIMIT ?
+            """,
+            parameters,
+        ).fetchall()
+        matches = []
+        for row in candidates:
+            name, path = row[1].casefold(), row[0].casefold()
+            if all(
+                fuzzy_contains(name, token) if token == anchor else
+                token in path or (len(token) >= FUZZY_MIN_LENGTH and fuzzy_contains(path, token))
+                for token in query.tokens
+            ):
+                matches.append(row)
+        matches.sort(key=lambda row: len(row[1]))
+        return matches[:limit]
 
     def _search_folder_paths(
         self,

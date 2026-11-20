@@ -9,7 +9,9 @@ from pathlib import Path
 from app.database import IndexedPath, SearchDatabase
 from app.models import SearchResult
 from app.query import parse_query
-from app.ranking import NO_MATCH, match_spans, name_tier, sort_key, tokenize
+from app.ranking import (
+    NO_MATCH, fuzzy_contains, match_spans, name_tier, sort_key, tokenize, within_one_edit,
+)
 
 
 class RankingTests(unittest.TestCase):
@@ -56,6 +58,23 @@ class HighlightTests(unittest.TestCase):
     def test_no_match_and_length_changing_names(self) -> None:
         self.assertEqual(match_spans("Firefox", ["frfx"]), [])
         self.assertEqual(match_spans("Straße", ["stra"]), [])
+
+
+class TypoTests(unittest.TestCase):
+    def test_one_edit(self) -> None:
+        for first, second in (
+            ("report", "report"), ("report", "repart"), ("report", "reprot"),
+            ("report", "reort"), ("report", "repoort"), ("a", ""),
+        ):
+            self.assertTrue(within_one_edit(first, second), (first, second))
+            self.assertTrue(within_one_edit(second, first), (second, first))
+        for first, second in (("report", "rapart"), ("report", "rep"), ("abcd", "badc")):
+            self.assertFalse(within_one_edit(first, second), (first, second))
+
+    def test_fuzzy_contains(self) -> None:
+        self.assertTrue(fuzzy_contains("annual report 2024.pdf", "reprot"))
+        self.assertTrue(fuzzy_contains("holiday.jpg", "holliday"))
+        self.assertFalse(fuzzy_contains("holiday.jpg", "birthday"))
 
 
 class QueryTests(unittest.TestCase):
@@ -195,6 +214,23 @@ class DatabaseSearchTests(unittest.TestCase):
         self.assertEqual(self.names("big modified:<1d"), ["/home/u/bigdir"])
         self.assertEqual(self.names("big modified:>30d"), ["/home/u/big.iso"])
         self.assertEqual(self.database.search("size:>1gb", 5)[0].size, 2_000_000_000)
+
+    def test_typo_is_forgiven_when_nothing_matches(self) -> None:
+        self.assertEqual(self.names("holliday"), ["/home/u/Pictures/holiday.jpg"])
+        self.assertEqual(self.names("hoilday"), ["/home/u/Pictures/holiday.jpg"])
+        self.assertEqual(self.names("invioces", "folder"), ["/home/u/Documents/invoices"])
+        self.assertEqual(self.names("annaul 2024"), ["/home/u/Documents/Annual Report 2024.pdf"])
+
+    def test_typo_search_respects_filters_and_does_not_guess_wildly(self) -> None:
+        self.assertEqual(self.names("holliday ext:pdf"), [])
+        self.assertEqual(self.names("birthday"), [])
+        self.assertEqual(self.names("hldy"), [])
+
+    def test_exact_matches_are_not_mixed_with_typo_matches(self) -> None:
+        self.database.upsert_many(
+            [IndexedPath(Path("/home/u/reports.txt"), "file", None, 1.0)], 1
+        )
+        self.assertNotIn("/home/u/reports.txt", self.names("report.pdf"))
 
     def test_kind_filter_and_special_characters(self) -> None:
         self.assertEqual(self.names("invoices", "folder"), ["/home/u/Documents/invoices"])

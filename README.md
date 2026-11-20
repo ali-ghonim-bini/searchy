@@ -104,7 +104,9 @@ scan.
 The letters that matched are shown in bold in each result. Words match in any order, so `2024 report` finds `Annual Report 2024.pdf`. A
 word may also match a parent folder: `invoices march` finds `march.pdf` inside
 `invoices/`. Applications also match by keyword (`browser`), initials (`vsc`),
-and small typos. Hidden and dependency directories rank below other matches.
+and small typos. When no file or folder matches, Searchy retries allowing one
+typing mistake in each word of five letters or more, so `holliday` still
+finds `holiday.jpg`. Hidden and dependency directories rank below other matches.
 
 ### Learning from use
 
