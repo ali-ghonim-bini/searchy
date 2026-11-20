@@ -9,6 +9,9 @@ from pathlib import Path
 DEFAULT_EXCLUDE = "node_modules:__pycache__:site-packages:venv:~/snap"
 
 
+DEFAULT_WEB_SEARCH_URL = "https://duckduckgo.com/?q={query}"
+
+
 def _read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
@@ -29,6 +32,13 @@ def _boolean(value: str, name: str) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"{name} must be true or false")
+
+
+def _web_search_url(value: str) -> str:
+    url = value.strip()
+    if url and (not url.startswith(("https://", "http://")) or "{query}" not in url):
+        raise ValueError("WEB_SEARCH_URL must be an http(s) URL containing {query}")
+    return url
 
 
 def _positive_int(value: str, name: str) -> int:
@@ -52,6 +62,7 @@ class Config:
     index_hidden: bool
     remember_usage: bool
     hide_on_focus_loss: bool
+    web_search_url: str
 
     @classmethod
     def load(cls, env_file: Path | None = None) -> "Config":
@@ -92,4 +103,5 @@ class Config:
             hide_on_focus_loss=_boolean(
                 value("HIDE_ON_FOCUS_LOSS", "true"), "HIDE_ON_FOCUS_LOSS"
             ),
+            web_search_url=_web_search_url(value("WEB_SEARCH_URL", DEFAULT_WEB_SEARCH_URL)),
         )
