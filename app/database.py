@@ -13,8 +13,11 @@ from .query import Query, parse_query
 from .ranking import MIN_INDEXED_LENGTH
 
 _RESULT_COLUMNS = (
-    "entries.path, entries.name, entries.parent, entries.kind, entries.created_at"
+    "entries.path, entries.name, entries.parent, entries.kind, entries.created_at,"
+    " entries.size, entries.modified_at"
 )
+# Bump when stored fields change, so existing indexes are rebuilt with them.
+INDEX_VERSION = 2
 _FTS_JOIN = " JOIN entries_fts ON entries.id = entries_fts.rowid"
 # Sorts hidden and dependency directories after everything else.
 _NOISE_SQL = (
@@ -29,6 +32,7 @@ class IndexedPath:
     kind: str
     created_at: float | None
     modified_at: float
+    size: int | None = None
 
 
 class SearchDatabase:
@@ -120,6 +124,14 @@ class SearchDatabase:
                     ON CONFLICT(key) DO UPDATE SET value=excluded.value;
                     """
                 )
+            if schema_version < 4:
+                connection.executescript(
+                    """
+                    ALTER TABLE entries ADD COLUMN size INTEGER;
+                    INSERT INTO metadata(key, value) VALUES ('schema_version', '4')
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+                    """
+                )
 
     def reset(self, keep_rules: bool = False) -> None:
         """Discard the index file; deleting most rows one by one is far slower."""
@@ -173,6 +185,7 @@ class SearchDatabase:
                 entry.kind,
                 entry.created_at,
                 entry.modified_at,
+                entry.size,
                 generation,
             )
             for entry in entries
@@ -182,20 +195,24 @@ class SearchDatabase:
         with self._connection() as connection:
             connection.executemany(
                 """
-                INSERT INTO entries(path, name, parent, kind, created_at, modified_at, generation)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO entries(
+                    path, name, parent, kind, created_at, modified_at, size, generation
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(path) DO UPDATE SET
                     name=excluded.name,
                     parent=excluded.parent,
                     kind=excluded.kind,
                     created_at=excluded.created_at,
                     modified_at=excluded.modified_at,
+                    size=excluded.size,
                     generation=excluded.generation
                 WHERE entries.name IS NOT excluded.name
                     OR entries.parent IS NOT excluded.parent
                     OR entries.kind IS NOT excluded.kind
                     OR entries.created_at IS NOT excluded.created_at
                     OR entries.modified_at IS NOT excluded.modified_at
+                    OR entries.size IS NOT excluded.size
                 """,
                 rows,
             )
@@ -319,6 +336,8 @@ class SearchDatabase:
                 created_at=row[4],
                 path=Path(row[0]),
                 source_path=Path(row[0]),
+                size=row[5],
+                modified_at=row[6],
             )
             for row in rows
         ]
@@ -397,7 +416,7 @@ class SearchDatabase:
             parameters.append(limit - len(results))
             descendants = connection.execute(
                 f"""
-                SELECT path, name, parent, kind, created_at
+                SELECT path, name, parent, kind, created_at, size, modified_at
                 FROM entries
                 WHERE path >= ? AND path < ?{kind_condition}
                 ORDER BY path
@@ -456,6 +475,18 @@ def _filter_conditions(query: Query, kind: str | None) -> tuple[list[str], list[
         )
         conditions.append(f"({clause})")
         parameters.extend("%." + _escape_like(item) for item in query.extensions)
+    if query.has_size_filter:
+        # Folders have no meaningful size of their own.
+        conditions.append("entries.kind = 'file'")
+    for column, sign, limit in (
+        ("size", ">=", query.min_size),
+        ("size", "<=", query.max_size),
+        ("modified_at", ">=", query.modified_after),
+        ("modified_at", "<", query.modified_before),
+    ):
+        if limit is not None:
+            conditions.append(f"entries.{column} {sign} ?")
+            parameters.append(limit)
     for folder in query.folders:
         # Matches any parent folder whose name starts with the value.
         conditions.append("lower(entries.parent) LIKE ? ESCAPE '\\'")

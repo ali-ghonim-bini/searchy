@@ -58,6 +58,26 @@ class IndexerTests(unittest.TestCase):
     def test_a_hidden_search_root_is_still_indexed(self) -> None:
         self.assertEqual(self.indexed(self.root / ".cache", (), False), {".", "blob.bin"})
 
+    def test_file_sizes_are_indexed(self) -> None:
+        path_filter = PathFilter.create(self.state, (), False)
+        indexer = FileIndexer(self.database, (self.root,), path_filter, 3600, lambda m: None)
+        sizes = {entry.path.name: entry.size for entry in indexer._walk(self.root)}
+        self.assertEqual((sizes["report.txt"], sizes["docs"]), (1, None))
+
+    def test_older_index_gains_the_size_column(self) -> None:
+        import sqlite3
+
+        path = self.state / "old.sqlite3"
+        SearchDatabase(path)
+        connection = sqlite3.connect(path)
+        connection.execute("ALTER TABLE entries DROP COLUMN size")
+        connection.execute("UPDATE metadata SET value = '3' WHERE key = 'schema_version'")
+        connection.commit()
+        connection.close()
+        upgraded = SearchDatabase(path)
+        upgraded.upsert_many([IndexedPath(self.root / "a.bin", "file", None, 1.0, 42)], 1)
+        self.assertEqual(upgraded.search("a.bin", 5)[0].size, 42)
+
     def test_reset_discards_the_index(self) -> None:
         self.database.upsert_many([IndexedPath(self.root / "docs", "folder", None, 1.0)], 1)
         self.database.set_index_rules("old")

@@ -92,7 +92,7 @@ class SearchWindow(Adw.ApplicationWindow):
             placeholder_text="Search applications, files, and folders", hexpand=True
         )
         self.search.set_tooltip_text(
-            "Filters: ext:pdf  in:Documents  kind:folder (or kind:file, kind:app)"
+            "Filters: ext:pdf  in:Documents  kind:folder  size:>100mb  modified:<7d"
         )
         self.search.add_css_class("searchy-entry")
         self.search.connect("search-changed", self._on_search_changed)

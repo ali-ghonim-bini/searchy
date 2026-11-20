@@ -16,3 +16,5 @@ class SearchResult:
     icon: Any = None
     payload: Any = None
     keywords: str = ""
+    size: int | None = None
+    modified_at: float | None = None

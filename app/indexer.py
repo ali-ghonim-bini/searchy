@@ -268,7 +268,8 @@ def _metadata(path: Path) -> IndexedPath | None:
     try:
         stat = path.stat(follow_symlinks=False)
         kind = "folder" if path.is_dir() and not path.is_symlink() else "file"
-        return IndexedPath(path, kind, creation_time(path), stat.st_mtime)
+        size = stat.st_size if kind == "file" else None
+        return IndexedPath(path, kind, creation_time(path), stat.st_mtime, size)
     except (OSError, PermissionError):
         return None
 
