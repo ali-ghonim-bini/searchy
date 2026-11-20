@@ -51,6 +51,7 @@ class Config:
     exclude_patterns: tuple[str, ...]
     index_hidden: bool
     remember_usage: bool
+    hide_on_focus_loss: bool
 
     @classmethod
     def load(cls, env_file: Path | None = None) -> "Config":
@@ -88,4 +89,7 @@ class Config:
             ),
             index_hidden=_boolean(value("INDEX_HIDDEN", "false"), "INDEX_HIDDEN"),
             remember_usage=_boolean(value("REMEMBER_USAGE", "true"), "REMEMBER_USAGE"),
+            hide_on_focus_loss=_boolean(
+                value("HIDE_ON_FOCUS_LOSS", "true"), "HIDE_ON_FOCUS_LOSS"
+            ),
         )
