@@ -54,6 +54,7 @@ INDEX_HIDDEN=false
 REMEMBER_USAGE=true
 HIDE_ON_FOCUS_LOSS=true
 SHOW_PREVIEW=true
+SEARCH_BOOKMARKS=true
 WEB_SEARCH_URL='https://duckduckgo.com/?q={query}'
 LOG_LEVEL=INFO
 ```
@@ -154,6 +155,17 @@ can paste it where you were. A few everyday words are understood too, such as
 The names come from the Unicode data shipped with Python, so nothing is
 downloaded and there is no extra file to install.
 
+### Bookmarks
+
+Your browser bookmarks appear among the results when their title or address
+matches; Enter opens one in the default browser. `kind:bookmark` shows
+bookmarks only. Firefox, Chrome, Chromium, Brave, Edge, Vivaldi and Opera
+profiles are read, including the Firefox and Chromium snaps.
+
+The bookmark files are read in place every five minutes; nothing is copied into
+the index and nothing is written to the browser's files. Browsing history is
+not read. Set `SEARCH_BOOKMARKS=false` to turn this off.
+
 ### Window
 
 Searchy opens as a launcher panel without a title bar. Drag any empty area to
@@ -221,7 +233,7 @@ Type filters in the search box alongside, or instead of, ordinary words:
 |---|---|---|
 | `ext:` | Files with that extension; separate several with commas | `invoice ext:pdf`, `ext:jpg,png` |
 | `in:` | Items inside a folder whose name starts with the value | `report in:Documents` |
-| `kind:` | Only `app`, `file`, or `folder`; overrides the dropdown | `projects kind:folder` |
+| `kind:` | Only `app`, `file`, `folder`, or `bookmark`; overrides the dropdown | `projects kind:folder` |
 | `size:` | Files at least (`>`, or no sign) or at most (`<`) a size; units `kb`, `mb`, `gb` | `size:>100mb`, `size:<10kb` |
 | `modified:` | Changed `today`, `yesterday`, within (`<`) or longer ago than (`>`) a period; units `h`, `d`, `w`, `m`, `y` | `modified:<7d`, `modified:>1y` |
 | `content:` | Files whose text contains the value; quote a phrase | `content:invoice`, `content:"due date" ext:md` |

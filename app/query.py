@@ -11,6 +11,7 @@ _KINDS = {
     "app": "app", "apps": "app",
     "file": "file", "files": "file",
     "folder": "folder", "folders": "folder", "dir": "folder",
+    "bookmark": "bookmark", "bookmarks": "bookmark",
 }
 
 

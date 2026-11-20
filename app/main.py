@@ -12,6 +12,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Gio", "2.0")
 from gi.repository import Adw, Gdk, Gio, GLib
 
+from .bookmarks import BookmarkCatalog
 from .catalog import ApplicationCatalog
 from .config import Config
 from .content import search_content
@@ -108,6 +109,7 @@ class SearchyApplication(Adw.Application):
                 limit,
                 cancel_event,
             ),
+            BookmarkCatalog() if self.config.search_bookmarks else None,
         )
         self.indexer = FileIndexer(
             self.database,

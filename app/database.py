@@ -276,7 +276,11 @@ class SearchDatabase:
         if isinstance(query, str):
             query = parse_query(query)
         # Text inside files is not indexed; app.content searches it on demand.
-        if query.kind == "app" or not query.searches_files or query.content is not None:
+        if (
+            query.kind in {"app", "bookmark"}
+            or not query.searches_files
+            or query.content is not None
+        ):
             return []
         kind = query.kind or kind
         if cancel_event and cancel_event.is_set():
