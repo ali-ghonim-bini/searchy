@@ -52,6 +52,7 @@ INDEX_INTERVAL_SECONDS=3600
 EXCLUDE=node_modules:__pycache__:site-packages:venv:~/snap
 INDEX_HIDDEN=false
 REMEMBER_USAGE=true
+HIDE_ON_FOCUS_LOSS=true
 LOG_LEVEL=INFO
 ```
 
@@ -114,6 +115,13 @@ opened a month ago counts half as much as one opened today.
 The history is stored in `~/.local/state/searchy/usage.sqlite3`, readable only
 by you, and survives index rebuilds. Set `REMEMBER_USAGE=false` to turn it off;
 delete the file to forget it.
+
+### Window
+
+Searchy opens as a launcher panel without a title bar. Drag any empty area to
+move it. It hides when you open a result, press Escape, press the shortcut
+again, or click another window. Set `HIDE_ON_FOCUS_LOSS=false` to keep it open
+when another window takes focus.
 
 ### Keyboard
 

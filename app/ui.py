@@ -43,6 +43,7 @@ class SearchWindow(Adw.ApplicationWindow):
         usage: UsageStore,
         result_limit: int,
         default_search_type: str,
+        hide_on_focus_loss: bool = True,
     ):
         super().__init__(application=application, title="Searchy")
         self.database = database
@@ -60,19 +61,24 @@ class SearchWindow(Adw.ApplicationWindow):
         )
         self.thumbnail_futures = []
         self.creation_sort_available = False
-        self.set_default_size(780, 620)
+        self.hide_on_focus_loss = hide_on_focus_loss
+        self.was_active = False
+        self.dialog_open = False
+        self.set_default_size(760, 560)
         self.connect("close-request", self._on_close_request)
+        self.connect("notify::is-active", self._on_active_changed)
+        _install_style()
 
-        toolbar = Adw.ToolbarView()
-        toolbar.add_top_bar(Adw.HeaderBar())
-        self.set_content(toolbar)
+        # No title bar: the window is a launcher panel. Empty areas still drag it.
+        handle = Gtk.WindowHandle()
+        self.set_content(handle)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        content.set_margin_top(12)
+        content.set_margin_top(16)
         content.set_margin_bottom(12)
-        content.set_margin_start(12)
-        content.set_margin_end(12)
-        toolbar.set_content(content)
+        content.set_margin_start(16)
+        content.set_margin_end(16)
+        handle.set_child(content)
 
         search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.search = Gtk.SearchEntry(
@@ -81,6 +87,7 @@ class SearchWindow(Adw.ApplicationWindow):
         self.search.set_tooltip_text(
             "Filters: ext:pdf  in:Documents  kind:folder (or kind:file, kind:app)"
         )
+        self.search.add_css_class("searchy-entry")
         self.search.connect("search-changed", self._on_search_changed)
         search_row.append(self.search)
         self.search_type = Gtk.DropDown.new_from_strings(
@@ -128,6 +135,7 @@ class SearchWindow(Adw.ApplicationWindow):
     def show_search(self) -> None:
         self._refresh_creation_sort()
         self.search.set_text("")
+        self.was_active = False
         self.present()
         self.search.grab_focus()
         self._schedule_search(0)
@@ -418,9 +426,11 @@ class SearchWindow(Adw.ApplicationWindow):
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
         dialog.connect("response", self._on_trash_response, result)
+        self.dialog_open = True
         dialog.present(self)
 
     def _on_trash_response(self, dialog, response: str, result: SearchResult) -> None:
+        self.dialog_open = False
         if response != "trash" or result.path is None:
             return
         file = Gio.File.new_for_path(str(result.path))
@@ -485,6 +495,20 @@ class SearchWindow(Adw.ApplicationWindow):
     def _on_row_activated(self, list_box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         self._open_result(row.result)
 
+    def _on_active_changed(self, window, parameter) -> None:
+        if self.is_active():
+            self.was_active = True
+            LOGGER.info("Search window gained focus")
+            return
+        # Only a window that had focus can lose it; otherwise it would vanish
+        # on compositors that show it without focusing it.
+        if not self.was_active or not self.get_visible():
+            return
+        self.was_active = False
+        LOGGER.info("Search window lost focus")
+        if self.hide_on_focus_loss and not self.dialog_open:
+            self.set_visible(False)
+
     def _on_close_request(self, window) -> bool:
         self.set_visible(False)
         return True
@@ -530,6 +554,20 @@ class SearchWindow(Adw.ApplicationWindow):
                 self._on_context_click(None, 1, 20, row.get_height() / 2, row)
                 return True
         return False
+
+
+def _install_style() -> None:
+    display = Gdk.Display.get_default()
+    if display is None or getattr(_install_style, "done", False):
+        return
+    provider = Gtk.CssProvider()
+    provider.load_from_string(
+        ".searchy-entry { min-height: 44px; font-size: 1.15em; border-radius: 12px; }"
+    )
+    Gtk.StyleContext.add_provider_for_display(
+        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+    _install_style.done = True
 
 
 def _icon_name(kind: str) -> str:

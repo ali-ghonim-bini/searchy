@@ -77,5 +77,55 @@ class KeyboardTests(unittest.TestCase):
         self.assertFalse(self.press(Gdk.KEY_c, Gdk.ModifierType.CONTROL_MASK))
 
 
+@unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
+class FocusTests(unittest.TestCase):
+    def make_window(self, hide_on_focus_loss: bool) -> SearchWindow:
+        Adw.init()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        window = SearchWindow(
+            None,
+            SearchDatabase(Path(directory.name) / "index.sqlite3"),
+            ApplicationCatalog(),
+            UsageStore(None),
+            50,
+            "everything",
+            hide_on_focus_loss,
+        )
+        self.addCleanup(window.shutdown)
+        self.hidden = False
+        window.get_visible = lambda: not self.hidden
+        window.set_visible = lambda visible: setattr(self, "hidden", not visible)
+        return window
+
+    def change_focus(self, window: SearchWindow, active: bool) -> None:
+        window.is_active = lambda: active
+        window._on_active_changed(window, None)
+
+    def test_hides_after_losing_focus(self) -> None:
+        window = self.make_window(True)
+        self.change_focus(window, True)
+        self.change_focus(window, False)
+        self.assertTrue(self.hidden)
+
+    def test_stays_open_if_it_never_had_focus(self) -> None:
+        window = self.make_window(True)
+        self.change_focus(window, False)
+        self.assertFalse(self.hidden)
+
+    def test_stays_open_while_a_dialog_is_shown(self) -> None:
+        window = self.make_window(True)
+        self.change_focus(window, True)
+        window.dialog_open = True
+        self.change_focus(window, False)
+        self.assertFalse(self.hidden)
+
+    def test_setting_can_keep_it_open(self) -> None:
+        window = self.make_window(False)
+        self.change_focus(window, True)
+        self.change_focus(window, False)
+        self.assertFalse(self.hidden)
+
+
 if __name__ == "__main__":
     unittest.main()

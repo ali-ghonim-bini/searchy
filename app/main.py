@@ -90,6 +90,7 @@ class SearchyApplication(Adw.Application):
             usage,
             self.config.result_limit,
             self.config.default_search_type,
+            self.config.hide_on_focus_loss,
         )
         self.indexer = FileIndexer(
             self.database,
