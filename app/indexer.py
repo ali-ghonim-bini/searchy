@@ -55,7 +55,15 @@ class FileIndexer:
         self.interval = interval
         self.on_status = on_status
         self.stop_event = threading.Event()
+        self.wake_event = threading.Event()
+        self.rebuild_requested = False
         self.thread: threading.Thread | None = None
+
+    def request_reindex(self, rebuild: bool = False) -> None:
+        """Rescan now instead of at the next interval; optionally from an empty index."""
+        if rebuild:
+            self.rebuild_requested = True
+        self.wake_event.set()
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self._run, name="searchy-indexer", daemon=True)
@@ -83,6 +91,7 @@ class FileIndexer:
                         self.path_filter,
                         self.database,
                         self.stop_event,
+                        self.wake_event,
                     )
                     watcher.watch_until(time.monotonic() + self.interval)
                 else:
@@ -92,13 +101,25 @@ class FileIndexer:
                         folder_count,
                         watch_limit,
                     )
-                    self.stop_event.wait(self.interval)
-                if not self.stop_event.is_set():
-                    self._reconcile()
+                    self._wait(self.interval)
+                if self.stop_event.is_set():
+                    break
+                self.wake_event.clear()
+                if self.rebuild_requested:
+                    self.rebuild_requested = False
+                    LOGGER.info("Rebuilding the index on request")
+                    self.database.reset(keep_rules=True)
+                self._reconcile()
             except Exception:
                 LOGGER.exception("Indexer cycle failed")
                 self.on_status("Index update failed; retrying")
                 self.stop_event.wait(min(self.interval, 30))
+
+    def _wait(self, seconds: float) -> None:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if self.stop_event.wait(1.0) or self.wake_event.is_set():
+                return
 
     def _reconcile(self) -> None:
         started_at = time.monotonic()
@@ -163,11 +184,13 @@ class _InotifyWatcher:
         path_filter: PathFilter,
         database: SearchDatabase,
         stop_event: threading.Event,
+        wake_event: threading.Event,
     ):
         self.roots = roots
         self.path_filter = path_filter
         self.database = database
         self.stop_event = stop_event
+        self.wake_event = wake_event
         self.paths: dict[int, Path] = {}
         self.libc = ctypes.CDLL(None, use_errno=True)
         self.fd = self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
@@ -178,7 +201,11 @@ class _InotifyWatcher:
 
     def watch_until(self, deadline: float) -> None:
         try:
-            while not self.stop_event.is_set() and time.monotonic() < deadline:
+            while (
+                not self.stop_event.is_set()
+                and not self.wake_event.is_set()
+                and time.monotonic() < deadline
+            ):
                 readable, _, _ = select.select([self.fd], [], [], 1.0)
                 if readable and not self._read_events():
                     return

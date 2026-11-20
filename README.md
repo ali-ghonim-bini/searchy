@@ -164,6 +164,20 @@ Filters combine: `ext:pdf in:invoices 2024`. A filter on its own is enough to
 search files, so `ext:iso` lists every ISO image. Folder names with spaces are
 not supported in `in:`; use one word of the name.
 
+## The `searchy` command
+
+`./install.sh` puts a `searchy` command in `~/.local/bin`:
+
+| Command | What it does |
+|---|---|
+| `searchy status` | Shows whether the service is running, how many items are indexed, when the last full scan finished, the index size, and whether live updates are on |
+| `searchy reindex` | Rescans the search roots now instead of waiting for the next interval |
+| `searchy reindex --rebuild` | Discards the index and builds it again from scratch |
+| `searchy show` | Shows or hides the search window, like the shortcut |
+
+The usage history is kept by a rebuild. If `searchy` is not found, log out and
+back in so `~/.local/bin` joins your `PATH`.
+
 ## Logs
 
 Searchy writes to the systemd user journal, which handles persistence and

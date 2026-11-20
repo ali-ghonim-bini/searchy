@@ -5,6 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 service_dir="${HOME}/.config/systemd/user"
 application_dir="${HOME}/.local/share/applications"
 dbus_service_dir="${HOME}/.local/share/dbus-1/services"
+bin_dir="${HOME}/.local/bin"
 icon_dir="${HOME}/.local/share/icons/hicolor/scalable/apps"
 binding_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/searchy/"
 media_schema="org.gnome.settings-daemon.plugins.media-keys"
@@ -25,7 +26,7 @@ for command in python3 gapplication gsettings systemctl; do
 done
 python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1')"
 
-mkdir -p "$service_dir" "$application_dir" "$dbus_service_dir" "$icon_dir"
+mkdir -p "$service_dir" "$application_dir" "$dbus_service_dir" "$icon_dir" "$bin_dir"
 
 # Drop any older enablement (it used default.target, which starts before Wayland).
 systemctl --user disable searchy.service 2>/dev/null || true
@@ -49,6 +50,12 @@ Path(destination).write_text(
 )
 Path(destination).chmod(0o644)
 PY
+
+# The `searchy` command: status, reindex, show.
+quoted_dir=$(printf '%s' "$project_dir" | sed "s/'/'\\\\''/g")
+printf '#!/bin/sh\ncd '"'"'%s'"'"' && exec python3 -m app.cli "$@"\n' "$quoted_dir" \
+    > "${bin_dir}/searchy"
+chmod 0755 "${bin_dir}/searchy"
 
 # Lets the shortcut (gapplication) start the service on demand.
 install -m 0644 "${project_dir}/io.github.alighonimbini.Searchy.dbus-service" \
@@ -98,3 +105,8 @@ fi
 
 echo "Searchy is installed and running with shortcut ${native_shortcut}."
 echo "Logs: journalctl --user -u searchy.service -f"
+echo "Run 'searchy status' to check the index."
+case ":${PATH}:" in
+    *":${bin_dir}:"*) ;;
+    *) echo "Note: ${bin_dir} is not on your PATH yet; log out and back in, or run ${bin_dir}/searchy." ;;
+esac

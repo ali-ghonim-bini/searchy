@@ -11,7 +11,8 @@ media_schema="org.gnome.settings-daemon.plugins.media-keys"
 binding_schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:${binding_path}"
 
 systemctl --user disable --now searchy.service 2>/dev/null || true
-rm -f "$service_file" "$application_file" "$dbus_service_file" "$icon_file"
+rm -f "$service_file" "$application_file" "$dbus_service_file" "$icon_file" \
+    "${HOME}/.local/bin/searchy"
 if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -d "$icon_root" ]; then
     gtk-update-icon-cache -f -t "$icon_root" ||
         echo "Warning: could not refresh the user icon cache." >&2
