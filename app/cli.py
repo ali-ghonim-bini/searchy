@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from . import __version__
 from .config import Config
 from .database import SearchDatabase
 
@@ -86,8 +87,33 @@ def _send(action: str) -> int:
         return 1
 
 
+def setup() -> int:
+    """Per-user steps a system package cannot do: the shortcut and starting the service."""
+    from . import settings
+
+    binding = settings.read_values(settings.ENV_PATH)[settings.SHORTCUT_KEY]
+    try:
+        current = subprocess.run(
+            ["gsettings", "get", "org.gnome.settings-daemon.plugins.media-keys",
+             "custom-keybindings"],
+            capture_output=True, text=True, check=True, timeout=10,
+        ).stdout.strip()
+        for command in settings.keybinding_commands(binding, current):
+            subprocess.run(command, check=True, timeout=10)
+        print(f"Shortcut set to {binding}.")
+    except (OSError, subprocess.SubprocessError, ValueError, SyntaxError) as error:
+        print(f"Could not set the GNOME shortcut: {error}", file=sys.stderr)
+        print(f"Bind a key yourself to: gapplication action {APPLICATION_ID} show-search")
+    code = subprocess.run(
+        ["systemctl", "--user", "enable", "--now", SERVICE], check=False
+    ).returncode
+    print("Searchy is running." if code == 0 else "Could not start the service.")
+    return code
+
+
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="searchy", description="Control the Searchy service.")
+    parser.add_argument("--version", action="version", version=f"searchy {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="show the service and index state")
     reindex = commands.add_parser("reindex", help="rescan the search roots now")
@@ -96,6 +122,9 @@ def main(arguments: list[str] | None = None) -> int:
     )
     commands.add_parser("show", help="show or hide the search window")
     commands.add_parser("settings", help="open the settings window")
+    commands.add_parser(
+        "setup", help="set the shortcut and start the service (after installing the package)"
+    )
     options = parser.parse_args(arguments)
     if options.command == "status":
         try:
@@ -109,6 +138,8 @@ def main(arguments: list[str] | None = None) -> int:
         return _send("show-search")
     if options.command == "settings":
         return _send("settings")
+    if options.command == "setup":
+        return setup()
     code = _send("rebuild-index" if options.rebuild else "reindex")
     if code == 0:
         print(
