@@ -17,6 +17,7 @@ from .catalog import ApplicationCatalog
 from .config import Config
 from .content import search_content
 from .database import INDEX_VERSION, SearchDatabase
+from .drives import DriveMonitor
 from .excludes import PathFilter
 from .indexer import FileIndexer
 from .ui import SearchWindow
@@ -42,6 +43,7 @@ class SearchyApplication(Adw.Application):
         self.window: SearchWindow | None = None
         self.indexer: FileIndexer | None = None
         self.app_monitor: Gio.AppInfoMonitor | None = None
+        self.drive_monitor: DriveMonitor | None = None
         self.exit_code = 0
 
     def do_startup(self) -> None:
@@ -119,6 +121,8 @@ class SearchyApplication(Adw.Application):
             lambda message: GLib.idle_add(self._set_index_status, message),
         )
         self.indexer.start()
+        if self.config.index_removable:
+            self.drive_monitor = DriveMonitor(self.indexer.add_root, self.indexer.remove_root)
         # Keep a reference: the monitor stops emitting once it is collected.
         self.app_monitor = Gio.AppInfoMonitor.get()
         self.app_monitor.connect("changed", lambda _monitor: self.catalog.refresh())
