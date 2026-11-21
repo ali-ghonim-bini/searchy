@@ -128,6 +128,55 @@ class ExtraResultTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
+class PreviewPaneTests(unittest.TestCase):
+    def make_window(self, show_preview: bool) -> SearchWindow:
+        Adw.init()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        window = SearchWindow(
+            None,
+            SearchDatabase(self.directory / "index.sqlite3"),
+            ApplicationCatalog(),
+            UsageStore(None),
+            50,
+            "everything",
+            show_preview=show_preview,
+        )
+        self.addCleanup(window.shutdown)
+        window.search_generation = 1
+        return window
+
+    def test_selected_file_is_previewed_and_apps_are_not(self) -> None:
+        window = self.make_window(True)
+        path = self.directory / "notes.txt"
+        path.write_text("hello preview", encoding="utf-8")
+        result = SearchResult("file", "notes.txt", str(self.directory), None, path, path)
+        window._apply_results(1, [result, SearchResult("app", "Zed", "", None)])
+        self.assertTrue(window.preview_pane.get_visible())
+        self.assertEqual(window.preview_title.get_text(), "notes.txt")
+        from app.ui import _load_preview
+
+        window._show_preview(window.preview_generation, *_load_preview(path))
+        self.assertEqual(window.preview_text.get_text(), "hello preview")
+        self.assertIn("Size: 13 bytes", window.preview_details.get_text())
+        window.list_box.select_row(window.list_box.get_row_at_index(1))
+        self.assertFalse(window.preview_pane.get_visible())
+
+    def test_stale_preview_is_ignored_and_setting_hides_the_pane(self) -> None:
+        window = self.make_window(True)
+        path = self.directory / "a.txt"
+        path.write_text("old", encoding="utf-8")
+        from app.ui import _load_preview
+
+        window._show_preview(window.preview_generation - 1, *_load_preview(path))
+        self.assertEqual(window.preview_text.get_text(), "")
+        hidden = self.make_window(False)
+        hidden._apply_results(1, [SearchResult("file", "a.txt", "", None, path, path)])
+        self.assertFalse(hidden.preview_pane.get_visible())
+
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
 class FocusTests(unittest.TestCase):
     def make_window(self, hide_on_focus_loss: bool) -> SearchWindow:
         Adw.init()
