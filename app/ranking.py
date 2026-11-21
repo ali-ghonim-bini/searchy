@@ -38,6 +38,27 @@ def name_tier(name: str, tokens: list[str]) -> int:
     return NO_MATCH
 
 
+def match_spans(name: str, tokens: list[str]) -> list[tuple[int, int]]:
+    """Character ranges of `name` that the query words matched, merged and sorted."""
+    folded = name.casefold()
+    # Case folding can change a string's length; positions would then be wrong.
+    if len(folded) != len(name):
+        return []
+    spans = []
+    for token in tokens:
+        start = folded.find(token)
+        while token and start >= 0:
+            spans.append((start, start + len(token)))
+            start = folded.find(token, start + 1)
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def is_noise(path: str) -> bool:
     """Hidden and dependency directories are rarely what a search is looking for."""
     return any(part in path for part in _NOISE_PARTS)

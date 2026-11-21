@@ -21,7 +21,7 @@ from .database import SearchDatabase
 from .extras import calculator_result, recent_files, web_result
 from .models import SearchResult
 from .query import parse_query
-from .ranking import sort_key
+from .ranking import match_spans, sort_key
 from .usage import UsageStore
 
 LOGGER = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ class SearchWindow(Adw.ApplicationWindow):
         self.was_active = False
         self.dialog_open = False
         self.focus_check_id = 0
+        self.highlight_tokens: list[str] = []
         self.set_default_size(760, 560)
         self.connect("close-request", self._on_close_request)
         self.connect("notify::is-active", self._on_active_changed)
@@ -270,6 +271,7 @@ class SearchWindow(Adw.ApplicationWindow):
             if fallback:
                 results.append(fallback)
         self.results = results[: self.result_limit]
+        self.highlight_tokens = tokens
         for future in self.thumbnail_futures:
             future.cancel()
         self.thumbnail_futures.clear()
@@ -346,8 +348,8 @@ class SearchWindow(Adw.ApplicationWindow):
             image.set_size_request(96, 72)
             box.append(image)
         labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True)
-        name = Gtk.Label(label=result.name, xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        name.add_css_class("heading")
+        name = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        name.set_markup(_highlighted(result.name, self.highlight_tokens))
         labels.append(name)
         detail = result.detail
         if result.created_at is not None:
@@ -628,6 +630,18 @@ class SearchWindow(Adw.ApplicationWindow):
                 self._on_context_click(None, 1, 20, row.get_height() / 2, row)
                 return True
         return False
+
+
+def _highlighted(name: str, tokens: list[str]) -> str:
+    """Pango markup for a result name with the matched letters in bold."""
+    parts = []
+    position = 0
+    for start, end in match_spans(name, tokens):
+        parts.append(GLib.markup_escape_text(name[position:start]))
+        parts.append("<b>" + GLib.markup_escape_text(name[start:end]) + "</b>")
+        position = end
+    parts.append(GLib.markup_escape_text(name[position:]))
+    return "".join(parts)
 
 
 def _install_style() -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 from app.database import IndexedPath, SearchDatabase
 from app.models import SearchResult
 from app.query import parse_query
-from app.ranking import NO_MATCH, name_tier, sort_key, tokenize
+from app.ranking import NO_MATCH, match_spans, name_tier, sort_key, tokenize
 
 
 class RankingTests(unittest.TestCase):
@@ -39,6 +39,21 @@ class RankingTests(unittest.TestCase):
         hidden = SearchResult("file", "notes.txt", "", None, Path("/home/u/.cache/notes.txt"))
         tokens = tokenize("notes")
         self.assertLess(sort_key(visible, tokens), sort_key(hidden, tokens))
+
+
+class HighlightTests(unittest.TestCase):
+    def test_spans_cover_every_matched_word(self) -> None:
+        self.assertEqual(
+            match_spans("Annual Report 2024.pdf", ["2024", "report"]), [(7, 13), (14, 18)]
+        )
+
+    def test_overlapping_and_repeated_matches_merge(self) -> None:
+        self.assertEqual(match_spans("banana", ["ana", "nan"]), [(1, 6)])
+        self.assertEqual(match_spans("a-a", ["a"]), [(0, 1), (2, 3)])
+
+    def test_no_match_and_length_changing_names(self) -> None:
+        self.assertEqual(match_spans("Firefox", ["frfx"]), [])
+        self.assertEqual(match_spans("Straße", ["stra"]), [])
 
 
 class QueryTests(unittest.TestCase):
