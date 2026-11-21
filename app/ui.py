@@ -27,6 +27,7 @@ from .actions import (
 from .catalog import ApplicationCatalog
 from .commands import is_shell_query, shell_results, system_results
 from .database import SearchDatabase
+from .emoji import emoji_results, is_emoji_query
 from .indexer import _metadata
 from .extras import calculator_result, recent_files, web_result
 from .models import SearchResult
@@ -42,6 +43,7 @@ QUICK_OPEN_COUNT = 9
 RECENT_FILE_COUNT = 8
 FOCUS_CHECK_MS = 150
 PREVIEW_WIDTH = 280
+EMOJI_COUNT = 60
 _DIGIT_KEYS = {
     getattr(Gdk, f"{prefix}{digit}"): digit - 1
     for prefix in ("KEY_", "KEY_KP_")
@@ -267,6 +269,12 @@ class SearchWindow(Adw.ApplicationWindow):
             self.search_hint = "Type a command after > and press Enter to run it"
             self._apply_results(generation, shell_results(self.search.get_text()), True)
             return
+        if is_emoji_query(self.search.get_text()):
+            self.search_hint = "Type part of an emoji or symbol name after the colon"
+            self._apply_results(
+                generation, emoji_results(self.search.get_text(), EMOJI_COUNT), True
+            )
+            return
         query = parse_query(self.search.get_text())
         mode = SEARCH_TYPES[self.search_type.get_selected()]
         if query.kind:
@@ -357,7 +365,9 @@ class SearchWindow(Adw.ApplicationWindow):
         answer = calculator_result(text)
         if answer:
             results.insert(0, answer)
-        elif not results and tokens and not is_shell_query(text):
+        elif (
+            not results and tokens and not is_shell_query(text) and not is_emoji_query(text)
+        ):
             # Nothing matched: offer to look the words up instead.
             fallback = web_result(" ".join(tokens), self.web_search_url)
             if fallback:
@@ -540,6 +550,11 @@ class SearchWindow(Adw.ApplicationWindow):
             if result.kind == "calc":
                 self._copy_text(result.payload)
                 self.status.set_text(f"Copied {result.payload}")
+                return
+            if result.kind == "emoji":
+                # Hide straight away so the character can be pasted where you were.
+                self._copy_text(result.payload)
+                self.set_visible(False)
                 return
             if result.kind == "command":
                 try:
@@ -923,6 +938,8 @@ def _icon_name(kind: str) -> str:
         return "utilities-terminal-symbolic"
     if kind == "system":
         return "system-shutdown-symbolic"
+    if kind == "emoji":
+        return "face-smile-symbolic"
     if kind == "calc":
         return "accessories-calculator-symbolic"
     if kind == "web":
