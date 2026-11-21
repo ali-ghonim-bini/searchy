@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .ranking import MIN_INDEXED_LENGTH
@@ -9,6 +10,10 @@ _KINDS = {
     "file": "file", "files": "file",
     "folder": "folder", "folders": "folder", "dir": "folder",
 }
+
+
+# A word may contain quoted stretches with spaces: in:"my documents".
+_WORDS = re.compile(r'(?:[^\s"]|"[^"]*"?)+')
 
 
 @dataclass(frozen=True)
@@ -41,8 +46,13 @@ def parse_query(text: str) -> Query:
     extensions: list[str] = []
     folders: list[str] = []
     kind = None
-    for word in text.casefold().split():
+    for raw_word in _WORDS.findall(text.casefold()):
+        # Quotes only group words; they are not part of what is searched.
+        word = raw_word.replace('"', "").strip()
+        if not word:
+            continue
         name, separator, value = word.partition(":")
+        value = value.strip()
         if separator and name == "ext":
             extensions.extend(item.lstrip(".") for item in value.split(",") if item.strip("."))
         elif separator and name == "in":
