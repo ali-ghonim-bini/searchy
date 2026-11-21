@@ -16,6 +16,8 @@ HALF_LIFE_SECONDS = 30 * 86400
 def usage_key(result: SearchResult) -> str | None:
     if result.kind == "app" and result.payload is not None:
         return "app:" + (result.payload.get_id() or result.name)
+    if result.kind == "bookmark" and result.payload:
+        return "url:" + result.payload
     if result.kind in {"file", "folder"} and result.path is not None:
         return str(result.path)
     return None

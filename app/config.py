@@ -64,6 +64,7 @@ class Config:
     hide_on_focus_loss: bool
     web_search_url: str
     show_preview: bool
+    search_bookmarks: bool
 
     @classmethod
     def load(cls, env_file: Path | None = None) -> "Config":
@@ -106,4 +107,5 @@ class Config:
             ),
             web_search_url=_web_search_url(value("WEB_SEARCH_URL", DEFAULT_WEB_SEARCH_URL)),
             show_preview=_boolean(value("SHOW_PREVIEW", "true"), "SHOW_PREVIEW"),
+            search_bookmarks=_boolean(value("SEARCH_BOOKMARKS", "true"), "SEARCH_BOOKMARKS"),
         )

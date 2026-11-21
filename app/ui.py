@@ -44,6 +44,7 @@ RECENT_FILE_COUNT = 8
 FOCUS_CHECK_MS = 150
 PREVIEW_WIDTH = 280
 EMOJI_COUNT = 60
+BOOKMARK_COUNT = 20
 _DIGIT_KEYS = {
     getattr(Gdk, f"{prefix}{digit}"): digit - 1
     for prefix in ("KEY_", "KEY_KP_")
@@ -64,6 +65,7 @@ class SearchWindow(Adw.ApplicationWindow):
         web_search_url: str = "",
         show_preview: bool = True,
         content_search=None,
+        bookmarks=None,
     ):
         super().__init__(application=application, title="Searchy")
         self.database = database
@@ -89,6 +91,7 @@ class SearchWindow(Adw.ApplicationWindow):
         self.highlight_tokens: list[str] = []
         self.show_preview = show_preview
         self.content_search = content_search
+        self.bookmarks = bookmarks
         self.preview_generation = 0
         self.set_default_size(1000 if show_preview else 760, 560)
         self.connect("close-request", self._on_close_request)
@@ -282,7 +285,13 @@ class SearchWindow(Adw.ApplicationWindow):
         mode = SEARCH_TYPES[self.search_type.get_selected()]
         if query.kind:
             # A kind: filter in the search box overrides the dropdown.
-            mode = {"app": "apps", "file": "files", "folder": "folders"}[query.kind]
+            mode = {
+                "app": "apps", "file": "files", "folder": "folders", "bookmark": "bookmarks",
+            }[query.kind]
+        if mode == "bookmarks":
+            self.search_hint = "Type part of a bookmark's title or address"
+            self._apply_results(generation, self._bookmark_results(query))
+            return
         started_at = time.monotonic()
         app_results = (
             self.catalog.search(query.text, self.result_limit)
@@ -291,6 +300,8 @@ class SearchWindow(Adw.ApplicationWindow):
         )
         if mode in {"everything", "apps"} and not query.has_file_filters:
             app_results = app_results + system_results(list(query.tokens))
+        if mode == "everything" and not query.has_file_filters:
+            app_results = app_results + self._bookmark_results(query)
         if not query.tokens and not query.has_file_filters:
             self.search_hint = ""
             self._apply_results(generation, self._idle_results(mode, app_results), True)
@@ -341,6 +352,11 @@ class SearchWindow(Adw.ApplicationWindow):
             GLib.idle_add(self._apply_results, generation, combined)
 
         future.add_done_callback(completed)
+
+    def _bookmark_results(self, query) -> list[SearchResult]:
+        if self.bookmarks is None:
+            return []
+        return self.bookmarks.search(list(query.tokens), BOOKMARK_COUNT)
 
     def _idle_results(self, mode: str, apps: list[SearchResult]) -> list[SearchResult]:
         """What an empty search box shows: used apps, recent files, then other apps."""
@@ -581,7 +597,7 @@ class SearchWindow(Adw.ApplicationWindow):
             if result.kind == "system":
                 self._run_system_command(result.payload)
                 return
-            if result.kind == "web":
+            if result.kind in {"web", "bookmark"}:
                 Gio.AppInfo.launch_default_for_uri(result.payload, None)
             elif result.kind == "app":
                 result.payload.launch([], None)
@@ -951,6 +967,8 @@ def _icon_name(kind: str) -> str:
         return "utilities-terminal-symbolic"
     if kind == "system":
         return "system-shutdown-symbolic"
+    if kind == "bookmark":
+        return "user-bookmarks-symbolic"
     if kind == "emoji":
         return "face-smile-symbolic"
     if kind == "calc":
