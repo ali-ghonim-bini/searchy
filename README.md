@@ -157,8 +157,26 @@ only the first 4 kB of a text file. Set `SHOW_PREVIEW=false` to hide the pane.
 | Ctrl+Enter | Show the selected result in the file manager |
 | Alt+1 … Alt+9 | Open that result directly; each row shows its number |
 | Ctrl+Shift+C | Copy the selected result's path |
+| F2 | Rename the selected file or folder |
+| Ctrl+Shift+T | Open a terminal in the selected folder, or in a file's folder |
 | Menu or Shift+F10 | Open the right-click menu, which also has Copy Path |
 | Escape | Hide Searchy |
+
+### Actions
+
+Right-click a file or folder (or press Menu) for more than opening it:
+
+- **Open with …** lists other applications that can open that type of file.
+- **Copy File / Copy Folder** puts the item itself on the clipboard, ready to
+  paste in a file manager.
+- **Rename…** asks for a new name. It refuses names containing `/` and names
+  already taken in that folder, so nothing is overwritten.
+- **Open Terminal Here** starts the first terminal found among Ptyxis, GNOME
+  Terminal, Console, Konsole, Xfce Terminal and `x-terminal-emulator`.
+- **Move to Trash** asks for confirmation first.
+
+After renaming a folder, the files inside it reappear under the new path at the
+next rescan (`searchy reindex`, or within `INDEX_INTERVAL_SECONDS`).
 
 ### Filters
 

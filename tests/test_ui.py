@@ -11,7 +11,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Adw, Gdk, GLib, Gtk
 
 from app.catalog import ApplicationCatalog
-from app.database import SearchDatabase
+from app.database import IndexedPath, SearchDatabase
 from app.models import SearchResult
 from app.ui import SearchWindow
 from app.usage import UsageStore
@@ -174,6 +174,59 @@ class PreviewPaneTests(unittest.TestCase):
         hidden = self.make_window(False)
         hidden._apply_results(1, [SearchResult("file", "a.txt", "", None, path, path)])
         self.assertFalse(hidden.preview_pane.get_visible())
+
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")
+class ResultActionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        Adw.init()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        self.database = SearchDatabase(self.directory / "index.sqlite3")
+        self.window = SearchWindow(
+            None, self.database, ApplicationCatalog(), UsageStore(None), 50, "everything"
+        )
+        self.addCleanup(self.window.shutdown)
+        self.path = self.directory / "draft.txt"
+        self.path.write_text("x", encoding="utf-8")
+        (self.directory / "taken.txt").touch()
+        self.result = SearchResult(
+            "file", "draft.txt", str(self.directory), None, self.path, self.path
+        )
+        self.spawned: list[tuple] = []
+        self.copied: list = []
+        self.window._spawn = lambda command, directory: self.spawned.append((command, directory))
+        self.window._copy_files = self.copied.extend
+        self.hidden = False
+        self.window.set_visible = lambda visible: setattr(self, "hidden", not visible)
+
+    def test_rename_moves_the_file_and_updates_the_index(self) -> None:
+        self.database.upsert_many([IndexedPath(self.path, "file", None, 1.0)], 1)
+        self.assertTrue(self.window._rename(self.result, "final.txt"))
+        self.assertFalse(self.path.exists())
+        self.assertTrue((self.directory / "final.txt").exists())
+        self.assertEqual([r.name for r in self.database.search("final", 5)], ["final.txt"])
+        self.assertEqual(self.database.search("draft", 5), [])
+
+    def test_rename_never_overwrites(self) -> None:
+        self.assertFalse(self.window._rename(self.result, "taken.txt"))
+        self.assertTrue(self.path.exists())
+        self.assertIn("already exists", self.window.status.get_text())
+        self.assertFalse(self.window._rename(self.result, "a/b"))
+
+    def test_terminal_opens_in_the_files_folder(self) -> None:
+        self.window._open_terminal(self.result)
+        if self.spawned:
+            self.assertEqual(self.spawned[0][1], self.directory)
+            self.assertTrue(self.hidden)
+        else:
+            self.assertEqual(self.window.status.get_text(), "No terminal application was found")
+
+    def test_copy_file_puts_the_file_on_the_clipboard(self) -> None:
+        self.window._copy_file(self.result)
+        self.assertEqual(self.copied, [self.path])
+        self.assertIn("Copied draft.txt", self.window.status.get_text())
 
 
 @unittest.skipUnless(HAS_DISPLAY, "needs a graphical session")

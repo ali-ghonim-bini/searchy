@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,8 +17,15 @@ gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 
+from .actions import (
+    open_with_applications,
+    rename_target,
+    terminal_command,
+    terminal_directory,
+)
 from .catalog import ApplicationCatalog
 from .database import SearchDatabase
+from .indexer import _metadata
 from .extras import calculator_result, recent_files, web_result
 from .models import SearchResult
 from .preview import Preview, describe
@@ -483,6 +491,25 @@ class SearchWindow(Adw.ApplicationWindow):
         copy_button.connect("clicked", lambda _button: self._copy_path(row.result, popover))
         menu.append(copy_button)
         if row.result.kind in {"file", "folder"} and row.result.path is not None:
+            for application in open_with_applications(row.result.path):
+                button = Gtk.Button(label=f"Open with {application.get_display_name()}")
+                button.connect(
+                    "clicked",
+                    lambda _button, chosen=application: self._open_with(
+                        row.result, chosen, popover
+                    ),
+                )
+                menu.append(button)
+            for label, handler in (
+                ("Copy " + row.result.kind.title(), self._copy_file),
+                ("Rename…", self._confirm_rename),
+                ("Open Terminal Here", self._open_terminal),
+            ):
+                button = Gtk.Button(label=label)
+                button.connect(
+                    "clicked", lambda _button, run=handler: run(row.result, popover)
+                )
+                menu.append(button)
             trash_button = Gtk.Button(label="Move to Trash")
             trash_button.add_css_class("destructive-action")
             trash_button.connect(
@@ -531,6 +558,102 @@ class SearchWindow(Adw.ApplicationWindow):
 
     def _copy_text(self, text: str) -> None:
         self.get_clipboard().set(text)
+
+    def _open_with(self, result: SearchResult, application, popover=None) -> None:
+        if popover:
+            popover.popdown()
+        try:
+            application.launch([Gio.File.new_for_path(str(result.path))], None)
+        except GLib.Error as error:
+            LOGGER.warning("Cannot open %s: %s", result.name, error.message)
+            self.status.set_text(f"Could not open {result.name}")
+            return
+        self.usage.record(result)
+        self.set_visible(False)
+
+    def _copy_file(self, result: SearchResult, popover=None) -> None:
+        if popover:
+            popover.popdown()
+        if result.path is None:
+            return
+        self._copy_files([result.path])
+        self.status.set_text(f"Copied {result.name}; paste it in a file manager")
+
+    def _copy_files(self, paths: list) -> None:
+        files = Gdk.FileList.new_from_list(
+            [Gio.File.new_for_path(str(path)) for path in paths]
+        )
+        self.get_clipboard().set_content(Gdk.ContentProvider.new_for_value(files))
+
+    def _open_terminal(self, result: SearchResult, popover=None) -> None:
+        if popover:
+            popover.popdown()
+        if result.path is None:
+            return
+        directory = terminal_directory(result.path)
+        command = terminal_command(directory)
+        if command is None:
+            self.status.set_text("No terminal application was found")
+            return
+        try:
+            self._spawn(command, directory)
+        except OSError as error:
+            LOGGER.warning("Cannot start terminal: %s", error)
+            self.status.set_text("Could not open a terminal")
+            return
+        self.set_visible(False)
+
+    def _spawn(self, command: list[str], directory) -> None:
+        subprocess.Popen(
+            command,
+            cwd=directory,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    def _confirm_rename(self, result: SearchResult, popover=None) -> None:
+        if popover:
+            popover.popdown()
+        if result.path is None:
+            return
+        dialog = Adw.AlertDialog(heading="Rename", body=f"New name for “{result.name}”")
+        entry = Gtk.Entry(text=result.name, activates_default=True)
+        dialog.set_extra_child(entry)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("rename", "Rename")
+        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("rename")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._on_rename_response, result, entry)
+        self.dialog_open = True
+        dialog.present(self)
+
+    def _on_rename_response(self, dialog, response: str, result, entry) -> None:
+        self.dialog_open = False
+        if response == "rename":
+            self._rename(result, entry.get_text())
+
+    def _rename(self, result: SearchResult, new_name: str) -> bool:
+        try:
+            target = rename_target(result.path, new_name)
+            result.path.rename(target)
+        except ValueError as error:
+            self.status.set_text(str(error))
+            return False
+        except OSError as error:
+            LOGGER.warning("Cannot rename %s: %s", result.path, error)
+            self.status.set_text(f"Could not rename {result.name}: {error.strerror}")
+            return False
+        # Update the index now; the watcher may be off or a moment behind.
+        self.database.delete_path(result.path)
+        indexed = _metadata(target)
+        if indexed:
+            self.database.upsert(indexed)
+        self.status.set_text(f"Renamed to {target.name}")
+        self._schedule_search(0)
+        return True
 
     def _confirm_trash(self, result: SearchResult, popover: Gtk.Popover) -> None:
         popover.popdown()
@@ -684,6 +807,15 @@ class SearchWindow(Adw.ApplicationWindow):
         if control and shift and keyval in (Gdk.KEY_c, Gdk.KEY_C):
             if selected_row:
                 self._copy_path(selected_row.result)
+            return True
+        can_act = bool(selected_row and selected_row.result.path is not None)
+        if keyval == Gdk.KEY_F2:
+            if can_act:
+                self._confirm_rename(selected_row.result)
+            return True
+        if control and shift and keyval in (Gdk.KEY_t, Gdk.KEY_T):
+            if can_act:
+                self._open_terminal(selected_row.result)
             return True
         if state & Gdk.ModifierType.ALT_MASK and keyval in _DIGIT_KEYS:
             row = self.list_box.get_row_at_index(_DIGIT_KEYS[keyval])
