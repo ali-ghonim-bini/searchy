@@ -7,6 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 
 import gi
 
@@ -24,6 +25,7 @@ from .actions import (
     terminal_directory,
 )
 from .catalog import ApplicationCatalog
+from .commands import is_shell_query, shell_results, system_results
 from .database import SearchDatabase
 from .indexer import _metadata
 from .extras import calculator_result, recent_files, web_result
@@ -261,6 +263,10 @@ class SearchWindow(Adw.ApplicationWindow):
         cancel_event = self.search_cancel_event
         self.search_generation += 1
         generation = self.search_generation
+        if is_shell_query(self.search.get_text()):
+            self.search_hint = "Type a command after > and press Enter to run it"
+            self._apply_results(generation, shell_results(self.search.get_text()), True)
+            return
         query = parse_query(self.search.get_text())
         mode = SEARCH_TYPES[self.search_type.get_selected()]
         if query.kind:
@@ -272,6 +278,8 @@ class SearchWindow(Adw.ApplicationWindow):
             if mode in {"everything", "apps"} and not query.has_file_filters
             else []
         )
+        if mode in {"everything", "apps"} and not query.has_file_filters:
+            app_results = app_results + system_results(list(query.tokens))
         if not query.tokens and not query.has_file_filters:
             self.search_hint = ""
             self._apply_results(generation, self._idle_results(mode, app_results), True)
@@ -349,7 +357,7 @@ class SearchWindow(Adw.ApplicationWindow):
         answer = calculator_result(text)
         if answer:
             results.insert(0, answer)
-        elif not results and tokens:
+        elif not results and tokens and not is_shell_query(text):
             # Nothing matched: offer to look the words up instead.
             fallback = web_result(" ".join(tokens), self.web_search_url)
             if fallback:
@@ -533,6 +541,18 @@ class SearchWindow(Adw.ApplicationWindow):
                 self._copy_text(result.payload)
                 self.status.set_text(f"Copied {result.payload}")
                 return
+            if result.kind == "command":
+                try:
+                    self._spawn(result.payload, Path.home())
+                except OSError as error:
+                    LOGGER.warning("Cannot run command: %s", error)
+                    self.status.set_text("Could not run that command")
+                    return
+                self.set_visible(False)
+                return
+            if result.kind == "system":
+                self._run_system_command(result.payload)
+                return
             if result.kind == "web":
                 Gio.AppInfo.launch_default_for_uri(result.payload, None)
             elif result.kind == "app":
@@ -654,6 +674,34 @@ class SearchWindow(Adw.ApplicationWindow):
         self.status.set_text(f"Renamed to {target.name}")
         self._schedule_search(0)
         return True
+
+    def _run_system_command(self, command) -> None:
+        if command.confirmation is None:
+            self._start_system_command(command)
+            return
+        dialog = Adw.AlertDialog(heading=f"{command.name}?", body=command.confirmation)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("run", command.name)
+        dialog.set_response_appearance("run", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._on_system_response, command)
+        self.dialog_open = True
+        dialog.present(self)
+
+    def _on_system_response(self, dialog, response: str, command) -> None:
+        self.dialog_open = False
+        if response == "run":
+            self._start_system_command(command)
+
+    def _start_system_command(self, command) -> None:
+        try:
+            self._spawn(list(command.argv), Path.home())
+        except OSError as error:
+            LOGGER.warning("Cannot run %s: %s", command.name, error)
+            self.status.set_text(f"Could not run {command.name}")
+            return
+        self.set_visible(False)
 
     def _confirm_trash(self, result: SearchResult, popover: Gtk.Popover) -> None:
         popover.popdown()
@@ -871,6 +919,10 @@ def _icon_name(kind: str) -> str:
         return "folder-symbolic"
     if kind == "app":
         return "application-x-executable-symbolic"
+    if kind == "command":
+        return "utilities-terminal-symbolic"
+    if kind == "system":
+        return "system-shutdown-symbolic"
     if kind == "calc":
         return "accessories-calculator-symbolic"
     if kind == "web":
