@@ -159,9 +159,12 @@ Type filters in the search box alongside, or instead of, ordinary words:
 | `ext:` | Files with that extension; separate several with commas | `invoice ext:pdf`, `ext:jpg,png` |
 | `in:` | Items inside a folder whose name starts with the value | `report in:Documents` |
 | `kind:` | Only `app`, `file`, or `folder`; overrides the dropdown | `projects kind:folder` |
+| `size:` | Files at least (`>`, or no sign) or at most (`<`) a size; units `kb`, `mb`, `gb` | `size:>100mb`, `size:<10kb` |
+| `modified:` | Changed `today`, `yesterday`, within (`<`) or longer ago than (`>`) a period; units `h`, `d`, `w`, `m`, `y` | `modified:<7d`, `modified:>1y` |
 
 Filters combine: `ext:pdf in:invoices 2024`. A filter on its own is enough to
-search files, so `ext:iso` lists every ISO image. Put quotes around
+search files, so `ext:iso` lists every ISO image. `size:>1gb` lists your
+largest files and `modified:today` what you worked on today. Put quotes around
 a folder name with spaces: `in:"My Documents"`.
 
 Quotes also make an exact phrase: `"annual report"` only finds names with

@@ -14,7 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib
 
 from .catalog import ApplicationCatalog
 from .config import Config
-from .database import SearchDatabase
+from .database import INDEX_VERSION, SearchDatabase
 from .excludes import PathFilter
 from .indexer import FileIndexer
 from .ui import SearchWindow
@@ -76,7 +76,9 @@ class SearchyApplication(Adw.Application):
             self.config.index_hidden,
         )
         # Entries indexed under other rules would linger, so start a fresh index.
-        rules = repr((sorted(map(str, self.config.search_roots)), path_filter.signature()))
+        rules = repr(
+            (sorted(map(str, self.config.search_roots)), path_filter.signature(), INDEX_VERSION)
+        )
         if self.database.index_rules() != rules:
             LOGGER.info("Index rules changed; rebuilding the index")
             self.database.reset()

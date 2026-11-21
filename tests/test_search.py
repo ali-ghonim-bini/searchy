@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from app.database import IndexedPath, SearchDatabase
@@ -81,6 +83,27 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(parse_query('in:"my doc').folders, ("my doc",))
         self.assertEqual(parse_query('""').tokens, ())
 
+    def test_size_filter(self) -> None:
+        self.assertEqual(parse_query("size:>100mb").min_size, 100_000_000)
+        self.assertEqual(parse_query("size:1.5gb").min_size, 1_500_000_000)
+        self.assertEqual(parse_query("size:<10kb").max_size, 10_000)
+        both = parse_query("size:>1mb size:<2mb")
+        self.assertEqual((both.min_size, both.max_size), (1_000_000, 2_000_000))
+        self.assertEqual(parse_query("size:huge").tokens, ("size:huge",))
+        self.assertTrue(parse_query("size:>1gb").searches_files)
+
+    def test_modified_filter(self) -> None:
+        now = datetime(2026, 5, 10, 15, 30).timestamp()
+        midnight = datetime(2026, 5, 10).timestamp()
+        self.assertEqual(parse_query("modified:today", now).modified_after, midnight)
+        yesterday = parse_query("modified:yesterday", now)
+        self.assertEqual(
+            (yesterday.modified_after, yesterday.modified_before), (midnight - 86400, midnight)
+        )
+        self.assertEqual(parse_query("modified:<7d", now).modified_after, now - 7 * 86400)
+        self.assertEqual(parse_query("modified:>1y", now).modified_before, now - 365 * 86400)
+        self.assertEqual(parse_query("modified:soon", now).tokens, ("modified:soon",))
+
     def test_filter_alone_can_search_files(self) -> None:
         self.assertTrue(parse_query("ext:pdf").searches_files)
         self.assertFalse(parse_query("kind:file ab").searches_files)
@@ -156,6 +179,22 @@ class DatabaseSearchTests(unittest.TestCase):
         )
         self.assertEqual(self.names('plan in:"my documents"'), ["/home/u/My Documents/plan.txt"])
         self.assertEqual(self.names('plan in:"my pictures"'), [])
+
+    def test_size_and_date_filters_select_files(self) -> None:
+        now = time.time()
+        self.database.upsert_many(
+            [
+                IndexedPath(Path("/home/u/big.iso"), "file", None, now - 40 * 86400, 2_000_000_000),
+                IndexedPath(Path("/home/u/small.txt"), "file", None, now - 3600, 500),
+                IndexedPath(Path("/home/u/bigdir"), "folder", None, now - 3600, None),
+            ],
+            1,
+        )
+        self.assertEqual(self.names("size:>1gb"), ["/home/u/big.iso"])
+        self.assertEqual(self.names("size:<1kb"), ["/home/u/small.txt"])
+        self.assertEqual(self.names("big modified:<1d"), ["/home/u/bigdir"])
+        self.assertEqual(self.names("big modified:>30d"), ["/home/u/big.iso"])
+        self.assertEqual(self.database.search("size:>1gb", 5)[0].size, 2_000_000_000)
 
     def test_kind_filter_and_special_characters(self) -> None:
         self.assertEqual(self.names("invoices", "folder"), ["/home/u/Documents/invoices"])
