@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -87,23 +88,47 @@ def _send(action: str) -> int:
         return 1
 
 
-def setup() -> int:
+def set_shortcut(desktop: str, binding: str, write: bool, home: Path) -> list[str]:
+    """Set the shortcut where Searchy can, and return what to tell the user."""
+    from . import settings, shortcuts
+
+    if desktop == "gnome":
+        try:
+            current = subprocess.run(
+                ["gsettings", "get", "org.gnome.settings-daemon.plugins.media-keys",
+                 "custom-keybindings"],
+                capture_output=True, text=True, check=True, timeout=10,
+            ).stdout.strip()
+            for command in settings.keybinding_commands(binding, current):
+                subprocess.run(command, check=True, timeout=10)
+            return [f"Shortcut set to {binding}."]
+        except (OSError, subprocess.SubprocessError, ValueError, SyntaxError) as error:
+            return [f"Could not set the GNOME shortcut: {error}",
+                    *shortcuts.instructions("other", binding, home)]
+    target = shortcuts.config_file(desktop, home)
+    if write and target is not None:
+        line = (shortcuts.sway_binding if desktop == "sway" else shortcuts.hyprland_binding)(
+            binding
+        )
+        changed = shortcuts.write_binding(target, line)
+        reload_hint = "Reload Sway to apply: swaymsg reload" if desktop == "sway" else ""
+        return [
+            f"{'Added the shortcut to' if changed else 'The shortcut is already in'} {target}.",
+            *([reload_hint] if reload_hint else []),
+        ]
+    return shortcuts.instructions(desktop, binding, home)
+
+
+def setup(write: bool = False) -> int:
     """Per-user steps a system package cannot do: the shortcut and starting the service."""
-    from . import settings
+    from . import settings, shortcuts
 
     binding = settings.read_values(settings.ENV_PATH)[settings.SHORTCUT_KEY]
+    desktop = shortcuts.detect_desktop(dict(os.environ))
     try:
-        current = subprocess.run(
-            ["gsettings", "get", "org.gnome.settings-daemon.plugins.media-keys",
-             "custom-keybindings"],
-            capture_output=True, text=True, check=True, timeout=10,
-        ).stdout.strip()
-        for command in settings.keybinding_commands(binding, current):
-            subprocess.run(command, check=True, timeout=10)
-        print(f"Shortcut set to {binding}.")
-    except (OSError, subprocess.SubprocessError, ValueError, SyntaxError) as error:
-        print(f"Could not set the GNOME shortcut: {error}", file=sys.stderr)
-        print(f"Bind a key yourself to: gapplication action {APPLICATION_ID} show-search")
+        print("\n".join(set_shortcut(desktop, binding, write, Path.home())))
+    except ValueError as error:
+        print(error, file=sys.stderr)
     code = subprocess.run(
         ["systemctl", "--user", "enable", "--now", SERVICE], check=False
     ).returncode
@@ -122,8 +147,12 @@ def main(arguments: list[str] | None = None) -> int:
     )
     commands.add_parser("show", help="show or hide the search window")
     commands.add_parser("settings", help="open the settings window")
-    commands.add_parser(
+    setup_parser = commands.add_parser(
         "setup", help="set the shortcut and start the service (after installing the package)"
+    )
+    setup_parser.add_argument(
+        "--write", action="store_true",
+        help="on Sway or Hyprland, add the shortcut to the compositor's config file",
     )
     options = parser.parse_args(arguments)
     if options.command == "status":
@@ -139,7 +168,7 @@ def main(arguments: list[str] | None = None) -> int:
     if options.command == "settings":
         return _send("settings")
     if options.command == "setup":
-        return setup()
+        return setup(options.write)
     code = _send("rebuild-index" if options.rebuild else "reindex")
     if code == 0:
         print(

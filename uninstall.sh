@@ -22,6 +22,9 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 systemctl --user daemon-reload
 
+# Other desktops have no Searchy entry in gsettings to remove.
+if command -v gsettings >/dev/null 2>&1 &&
+    gsettings list-schemas | grep -qx "$media_schema"; then
 current_bindings=$(gsettings get "$media_schema" custom-keybindings)
 updated_bindings=$(python3 - "$current_bindings" "$binding_path" <<'PY'
 import ast
@@ -35,6 +38,7 @@ PY
 )
 gsettings set "$media_schema" custom-keybindings "$updated_bindings"
 gsettings reset-recursively "$binding_schema"
+fi
 
 if [ "${1:-}" = "--purge" ]; then
     rm -rf "${HOME}/.local/state/searchy"

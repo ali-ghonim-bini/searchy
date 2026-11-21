@@ -61,6 +61,24 @@ its settings in `~/.config/searchy/.env`; a checkout keeps them in `.env`
 beside the code. Do not use both `./install.sh` and the package for the same
 user: run `./uninstall.sh` first.
 
+### Other desktops
+
+Searchy needs a Wayland session. The shortcut is set automatically on GNOME and
+desktops built on it (Ubuntu, Pop!_OS, Budgie). Elsewhere `./install.sh` and
+`searchy setup` install everything else and tell you how to bind the key:
+
+| Desktop | What to do |
+|---|---|
+| Sway | `searchy setup --write` adds a `bindsym` line to `~/.config/sway/config`; then `swaymsg reload` |
+| Hyprland | `searchy setup --write` adds a `bind` line to `~/.config/hypr/hyprland.conf` |
+| KDE Plasma | System Settings > Keyboard > Shortcuts > Add New > Command, with the command `searchy setup` prints |
+| Xfce and others | Bind a key to the command `searchy setup` prints |
+
+Without `--write`, `searchy setup` only prints the line. With it, the line goes
+in a marked block that is updated in place if you run it again. Only GNOME has
+been tested; the others follow each desktop's documented shortcut syntax but
+have not been run.
+
 ## Configuration
 
 Open the settings window with the gear button beside the search box, with
