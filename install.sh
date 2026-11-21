@@ -18,7 +18,16 @@ fi
 . "${project_dir}/.env"
 native_shortcut=${NATIVE_SHORTCUT:-"<Alt>f"}
 
-for command in python3 gapplication gsettings systemctl; do
+# Only GNOME-based desktops keep shortcuts in gsettings.
+case ":$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]'):" in
+    *:gnome:*|*:unity:*|*:ubuntu:*|*:pop:*|*:budgie:*) gnome_desktop=1 ;;
+    *) gnome_desktop=0 ;;
+esac
+required="python3 gapplication systemctl"
+if [ "$gnome_desktop" = 1 ]; then
+    required="${required} gsettings"
+fi
+for command in $required; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Missing required command: ${command}" >&2
         exit 1
@@ -74,6 +83,7 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$application_dir"
 fi
 
+if [ "$gnome_desktop" = 1 ]; then
 current_bindings=$(gsettings get "$media_schema" custom-keybindings)
 updated_bindings=$(python3 - "$current_bindings" "$binding_path" <<'PY'
 import ast
@@ -93,6 +103,7 @@ gsettings set "$binding_schema" name "Searchy"
 gsettings set "$binding_schema" command \
     "gapplication action io.github.alighonimbini.Searchy show-search"
 gsettings set "$binding_schema" binding "$native_shortcut"
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable searchy.service
@@ -103,7 +114,12 @@ if ! systemctl --user restart searchy.service; then
     exit 1
 fi
 
-echo "Searchy is installed and running with shortcut ${native_shortcut}."
+if [ "$gnome_desktop" = 1 ]; then
+    echo "Searchy is installed and running with shortcut ${native_shortcut}."
+else
+    echo "Searchy is installed and running. This desktop's shortcut is not set automatically:"
+    "${bin_dir}/searchy" setup || true
+fi
 echo "Logs: journalctl --user -u searchy.service -f"
 echo "Run 'searchy status' to check the index."
 case ":${PATH}:" in
