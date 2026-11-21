@@ -39,6 +39,14 @@ journalctl --user -u searchy.service -f
 
 ## Configuration
 
+Open the settings window with the gear button beside the search box, with
+Ctrl+, or with `searchy settings`. It edits the same `.env` file described
+below, checks the values before saving, and restarts Searchy to apply them.
+Changing the shortcut there also moves the GNOME key binding. Comments and
+any other lines in `.env` are kept.
+
+To change settings by hand instead:
+
 Edit `.env`, then run `./install.sh` again. `SEARCH_ROOTS` accepts a
 colon-separated list.
 
@@ -198,6 +206,7 @@ only the first 4 kB of a text file. Set `SHOW_PREVIEW=false` to hide the pane.
 | F2 | Rename the selected file or folder |
 | Ctrl+Shift+T | Open a terminal in the selected folder, or in a file's folder |
 | Menu or Shift+F10 | Open the right-click menu, which also has Copy Path |
+| Ctrl+, | Open settings |
 | Escape | Hide Searchy |
 
 ### Searching inside files
@@ -262,6 +271,7 @@ those words next to each other, in that order.
 | `searchy reindex` | Rescans the search roots now instead of waiting for the next interval |
 | `searchy reindex --rebuild` | Discards the index and builds it again from scratch |
 | `searchy show` | Shows or hides the search window, like the shortcut |
+| `searchy settings` | Opens the settings window |
 
 The usage history is kept by a rebuild. If `searchy` is not found, log out and
 back in so `~/.local/bin` joins your `PATH`.
